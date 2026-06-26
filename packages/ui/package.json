@@ -1,0 +1,19 @@
+{
+  "name": "@mas/ui",
+  "version": "1.0.0",
+  "description": "Shared React components and Zustand stores for the Master AI Social family",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "peerDependencies": {
+    "antd": "^5.23.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "dependencies": {
+    "@mas/types": "1.0.0"
+  }
+}

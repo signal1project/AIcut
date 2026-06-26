@@ -1,0 +1,14 @@
+{
+  "name": "@mas/server",
+  "version": "1.0.0",
+  "description": "Platform adapters, OAuth, AI abstraction, and publish pipeline for Master AI Social",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "dependencies": {
+    "@mas/types": "1.0.0"
+  }
+}

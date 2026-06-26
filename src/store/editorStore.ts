@@ -1,0 +1,272 @@
+import { create } from 'zustand';
+import { immer } from 'zustand/middleware/immer';
+import { v4 as uuidv4 } from 'uuid';
+
+export type ClipType = 'video' | 'audio' | 'caption';
+
+export interface Clip {
+  id: string;
+  trackId: string;
+  src: string;
+  name: string;
+  duration: number;     // total source duration in seconds
+  startTime: number;    // position on timeline (seconds from start)
+  trimStart: number;    // seconds trimmed from clip head
+  trimEnd: number;      // seconds trimmed from clip tail
+  type: ClipType;
+  thumbnail?: string;   // path to thumbnail image
+  captionText?: string; // for caption clips
+  volume?: number;      // 0-1
+  speed?: number;       // playback speed multiplier (default 1.0); 2.0 = 2x faster
+  fadeIn?: number;      // fade-in duration in seconds (default 0)
+  fadeOut?: number;     // fade-out duration in seconds (default 0)
+}
+
+export interface Track {
+  id: string;
+  type: ClipType;
+  label: string;
+  clips: Clip[];
+  muted?: boolean;
+  locked?: boolean;
+}
+
+export interface MediaItem {
+  id: string;
+  src: string;
+  name: string;
+  duration: number;
+  type: 'video' | 'audio';
+  thumbnail?: string;
+  width?: number;
+  height?: number;
+}
+
+export interface EditorState {
+  projectName: string;
+  tracks: Track[];
+  playhead: number;       // current time in seconds
+  duration: number;       // total project duration in seconds
+  selectedClipId: string | null;
+  selectedTrackId: string | null;
+  zoom: number;           // pixels per second (10-200)
+  isPlaying: boolean;
+  mediaLibrary: MediaItem[];
+  exportProgress: number | null; // 0-100 during export, null otherwise
+  captionJobId: string | null;
+
+  // Actions
+  setProjectName: (name: string) => void;
+  addMediaItem: (item: MediaItem) => void;
+  addClipToTrack: (trackId: string, clip: Omit<Clip, 'id' | 'trackId'>) => string;
+  removeClip: (clipId: string) => void;
+  updateClip: (clipId: string, patch: Partial<Clip>) => void;
+  moveClip: (clipId: string, newStartTime: number, newTrackId?: string) => void;
+  trimClip: (clipId: string, trimStart: number, trimEnd: number) => void;
+  splitClip: (clipId: string, atTime: number) => void;
+  selectClip: (clipId: string | null) => void;
+  setPlayhead: (time: number) => void;
+  setZoom: (zoom: number) => void;
+  setIsPlaying: (playing: boolean) => void;
+  addTrack: (type: ClipType, label?: string) => string;
+  removeTrack: (trackId: string) => void;
+  toggleTrackMute: (trackId: string) => void;
+  toggleTrackLock: (trackId: string) => void;
+  setExportProgress: (progress: number | null) => void;
+  recalcDuration: () => void;
+  undo: () => void;
+  redo: () => void;
+  resetProject: () => void;
+}
+
+const DEFAULT_TRACKS: Track[] = [
+  { id: 'track-video-1', type: 'video', label: 'Video 1', clips: [] },
+  { id: 'track-audio-1', type: 'audio', label: 'Audio 1', clips: [] },
+  { id: 'track-caption-1', type: 'caption', label: 'Captions', clips: [] },
+];
+
+export function clipEffectiveDuration(clip: Clip): number {
+  return (clip.duration - clip.trimStart - clip.trimEnd) / (clip.speed ?? 1);
+}
+
+function calcDuration(tracks: Track[]): number {
+  let max = 0;
+  for (const track of tracks) {
+    for (const clip of track.clips) {
+      const end = clip.startTime + clipEffectiveDuration(clip);
+      if (end > max) max = end;
+    }
+  }
+  return max;
+}
+
+export const useEditorStore = create<EditorState>()(
+  immer((set, get) => ({
+    projectName: 'Untitled Project',
+    tracks: DEFAULT_TRACKS,
+    playhead: 0,
+    duration: 0,
+    selectedClipId: null,
+    selectedTrackId: null,
+    zoom: 60,
+    isPlaying: false,
+    mediaLibrary: [],
+    exportProgress: null,
+    captionJobId: null,
+
+    setProjectName: (name) => set((s) => { s.projectName = name; }),
+
+    addMediaItem: (item) => set((s) => {
+      if (!s.mediaLibrary.find((m) => m.id === item.id)) {
+        s.mediaLibrary.push(item);
+      }
+    }),
+
+    addClipToTrack: (trackId, clip) => {
+      const id = uuidv4();
+      set((s) => {
+        const track = s.tracks.find((t) => t.id === trackId);
+        if (track) {
+          track.clips.push({ ...clip, id, trackId });
+          s.duration = calcDuration(s.tracks);
+        }
+      });
+      return id;
+    },
+
+    removeClip: (clipId) => set((s) => {
+      for (const track of s.tracks) {
+        const idx = track.clips.findIndex((c) => c.id === clipId);
+        if (idx !== -1) { track.clips.splice(idx, 1); break; }
+      }
+      if (s.selectedClipId === clipId) s.selectedClipId = null;
+      s.duration = calcDuration(s.tracks);
+    }),
+
+    updateClip: (clipId, patch) => set((s) => {
+      for (const track of s.tracks) {
+        const clip = track.clips.find((c) => c.id === clipId);
+        if (clip) { Object.assign(clip, patch); break; }
+      }
+      s.duration = calcDuration(s.tracks);
+    }),
+
+    moveClip: (clipId, newStartTime, newTrackId) => set((s) => {
+      let found: Clip | undefined;
+      let fromTrack: Track | undefined;
+      for (const track of s.tracks) {
+        const clip = track.clips.find((c) => c.id === clipId);
+        if (clip) { found = clip; fromTrack = track; break; }
+      }
+      if (!found || !fromTrack) return;
+      found.startTime = Math.max(0, newStartTime);
+      if (newTrackId && newTrackId !== fromTrack.id) {
+        const toTrack = s.tracks.find((t) => t.id === newTrackId);
+        if (toTrack && toTrack.type === fromTrack.type) {
+          fromTrack.clips = fromTrack.clips.filter((c) => c.id !== clipId);
+          found.trackId = newTrackId;
+          toTrack.clips.push(found);
+        }
+      }
+      s.duration = calcDuration(s.tracks);
+    }),
+
+    trimClip: (clipId, trimStart, trimEnd) => set((s) => {
+      for (const track of s.tracks) {
+        const clip = track.clips.find((c) => c.id === clipId);
+        if (clip) {
+          clip.trimStart = Math.max(0, trimStart);
+          clip.trimEnd = Math.max(0, trimEnd);
+          break;
+        }
+      }
+      s.duration = calcDuration(s.tracks);
+    }),
+
+    splitClip: (clipId, atTime) => set((s) => {
+      for (const track of s.tracks) {
+        const idx = track.clips.findIndex((c) => c.id === clipId);
+        if (idx === -1) continue;
+        const clip = track.clips[idx];
+        const splitPoint = atTime - clip.startTime + clip.trimStart;
+        if (splitPoint <= clip.trimStart || splitPoint >= clip.duration - clip.trimEnd) return;
+
+        const right: Clip = {
+          ...clip,
+          id: uuidv4(),
+          trimStart: splitPoint,
+          startTime: atTime,
+        };
+        clip.trimEnd = clip.duration - splitPoint;
+        track.clips.splice(idx + 1, 0, right);
+        break;
+      }
+      s.duration = calcDuration(s.tracks);
+    }),
+
+    selectClip: (clipId) => set((s) => {
+      s.selectedClipId = clipId;
+      if (clipId) {
+        for (const track of s.tracks) {
+          if (track.clips.find((c) => c.id === clipId)) {
+            s.selectedTrackId = track.id;
+            break;
+          }
+        }
+      }
+    }),
+
+    setPlayhead: (time) => set((s) => {
+      s.playhead = Math.max(0, Math.min(time, s.duration || 0));
+    }),
+
+    setZoom: (zoom) => set((s) => { s.zoom = Math.max(10, Math.min(200, zoom)); }),
+
+    setIsPlaying: (playing) => set((s) => { s.isPlaying = playing; }),
+
+    addTrack: (type, label) => {
+      const id = uuidv4();
+      set((s) => {
+        const count = s.tracks.filter((t) => t.type === type).length + 1;
+        s.tracks.push({ id, type, label: label ?? `${type.charAt(0).toUpperCase() + type.slice(1)} ${count}`, clips: [] });
+      });
+      return id;
+    },
+
+    removeTrack: (trackId) => set((s) => {
+      s.tracks = s.tracks.filter((t) => t.id !== trackId);
+      s.duration = calcDuration(s.tracks);
+    }),
+
+    toggleTrackMute: (trackId) => set((s) => {
+      const track = s.tracks.find((t) => t.id === trackId);
+      if (track) track.muted = !track.muted;
+    }),
+
+    toggleTrackLock: (trackId) => set((s) => {
+      const track = s.tracks.find((t) => t.id === trackId);
+      if (track) track.locked = !track.locked;
+    }),
+
+    setExportProgress: (progress) => set((s) => { s.exportProgress = progress; }),
+
+    recalcDuration: () => set((s) => { s.duration = calcDuration(s.tracks); }),
+
+    undo: () => {},
+    redo: () => {},
+
+    resetProject: () => set((s) => {
+      s.projectName = 'Untitled Project';
+      s.tracks = DEFAULT_TRACKS.map((t) => ({ ...t, clips: [] }));
+      s.playhead = 0;
+      s.duration = 0;
+      s.selectedClipId = null;
+      s.selectedTrackId = null;
+      s.zoom = 60;
+      s.isPlaying = false;
+      s.mediaLibrary = [];
+      s.exportProgress = null;
+      s.captionJobId = null;
+    }),
+  })),
+);
