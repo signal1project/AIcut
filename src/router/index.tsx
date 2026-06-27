@@ -20,4 +20,6 @@ export const router = [
   },
 ];
 
-export default createHashRouter(router);
+export default createHashRouter(router, {
+  future: { v7_relativeSplatPath: true },
+});
