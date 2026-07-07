@@ -1,6 +1,6 @@
 import { Outlet, useNavigate, useLocation, NavLink } from 'react-router-dom';
 import { useEffect } from 'react';
-import { Home, Send, Wand2, Search, Kanban, BarChart2, MessageSquare, Calendar } from 'lucide-react';
+import { Home, Send, Wand2, Search, Kanban, BarChart2, MessageSquare, Calendar, Building2 } from 'lucide-react';
 import WindowControlButtons from '@/components/WindowControlButtons/WindowControlButtons';
 import { ipc } from '@/lib/ipc';
 import { useEditorStore } from '@/store/editorStore';
@@ -10,6 +10,7 @@ const MAS_NAV = [
   { path: '/mas/scheduler', label: 'Schedule',  icon: Calendar },
   { path: '/mas/content',   label: 'Generate',  icon: Wand2 },
   { path: '/mas/research',  label: 'Research',  icon: Search },
+  { path: '/mas/listings',  label: 'Listings',  icon: Building2 },
   { path: '/mas/pipeline',  label: 'Pipeline',  icon: Kanban },
   { path: '/mas/analytics', label: 'Analytics', icon: BarChart2 },
   { path: '/mas/engagement',label: 'Engage',    icon: MessageSquare },

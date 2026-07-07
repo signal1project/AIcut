@@ -26,6 +26,7 @@ import {
   createResearchRouter,
 } from '../research';
 import { PlatformAlgorithmAgent, createAlgorithmRouter } from '../algorithm';
+import { TypeOrmListingStore, createListingsRouter } from '../listings';
 import { createDefaultAgentRegistry, createAgentRouter } from '../agent';
 import { CapCutPackageService, createCapCutRouter } from '../capcut';
 import { TypeOrmCampaignPackageStore, SocialEngineWorkflowService, createWorkflowRouter } from '../workflow';
@@ -50,6 +51,7 @@ export interface MasRuntime {
   agentRegistry: ReturnType<typeof createDefaultAgentRegistry>;
   capcut: CapCutPackageService;
   workflow: SocialEngineWorkflowService;
+  listings: TypeOrmListingStore;
 }
 
 /**
@@ -158,6 +160,7 @@ export function buildMasRuntime(deps: MasRuntimeDeps): MasRuntime {
   ];
 
   const research = new TrendingResearchService(dataSource, trendFetchers);
+  const listings = new TypeOrmListingStore(dataSource);
   const agentRegistry = createDefaultAgentRegistry();
   const capcut = new CapCutPackageService();
   const packageStore = new TypeOrmCampaignPackageStore(dataSource);
@@ -180,7 +183,8 @@ export function buildMasRuntime(deps: MasRuntimeDeps): MasRuntime {
     { path: '/agent', router: createAgentRouter(agentRegistry) },
     { path: '/capcut', router: createCapCutRouter(capcut) },
     { path: '/workflow', router: createWorkflowRouter(workflow) },
+    { path: '/listings', router: createListingsRouter(listings) },
   ];
 
-  return { routes, scheduler, publish, content, analytics, engagement, research, algorithm, agentRegistry, capcut, workflow };
+  return { routes, scheduler, publish, content, analytics, engagement, research, algorithm, agentRegistry, capcut, workflow, listings };
 }

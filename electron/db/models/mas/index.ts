@@ -9,3 +9,4 @@ export { AnalyticsSnapshotModel } from './analyticsSnapshot';
 export { AuditLogModel } from './auditLog';
 export { TrendSignalModel } from './trendSignal';
 export { CampaignPackageModel, type CampaignPackageStatus } from './campaignPackage';
+export { PropertyListingModel } from './propertyListing';

@@ -5,12 +5,15 @@ import path from 'path';
 import { Settings, type SettingsStore } from '../settings/settings';
 import { getCredentialManager } from '../credentials';
 import { startApiServer, type RunningApiServer } from '../server';
+import { startListingCaptureServer, type CaptureServer } from '../listings';
 import { buildMasRuntime, type MasRuntime } from './runtime';
 import { registerMasIpc } from './ipc';
+import { logger } from '../../global/log';
 
 export interface StartedMas {
   runtime: MasRuntime;
   api: RunningApiServer;
+  capture: CaptureServer | null;
 }
 
 let started: StartedMas | null = null;
@@ -41,7 +44,17 @@ export async function startMas(dataSource: DataSource, settingsStore: SettingsSt
     }));
   } catch { /* non-fatal — Hermes can use manual port override */ }
 
-  started = { runtime, api };
+  // Fixed-port listener for the Listing Scraper Chrome extension. Guarded:
+  // a busy port must never take down the rest of the MAS backend.
+  let capture: CaptureServer | null = null;
+  try {
+    capture = await startListingCaptureServer(runtime.listings);
+    logger.log(`[AICut] Listing capture server on ${capture.url}`);
+  } catch (err) {
+    logger.error('[AICut] Listing capture server failed to start (port busy?)', err);
+  }
+
+  started = { runtime, api, capture };
   return started;
 }
 

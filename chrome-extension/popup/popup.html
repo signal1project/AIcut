@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 240px;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #041d1a;
+      color: #ffe9d0;
+      padding: 16px;
+    }
+    h2 { font-size: 13px; font-weight: 700; color: #34d399; margin-bottom: 6px; }
+    p  { font-size: 11px; color: #a7d8c8; line-height: 1.5; margin-bottom: 12px; }
+    .status {
+      font-size: 11px; padding: 6px 10px; border-radius: 6px;
+      background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.3);
+      color: #34d399;
+    }
+    .status.error { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); color: #f87171; }
+    a { color: #34d399; font-size: 11px; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h2>AICut Listing Scraper</h2>
+  <p>Navigate to a listing on Zillow, Realtor.com, or Redfin — a capture button will appear on the page.</p>
+  <div id="status" class="status">Checking app status…</div>
+  <br/>
+  <a href="#" id="open-app">Open AICut ↗</a>
+  <script src="popup.js"></script>
+</body>
+</html>

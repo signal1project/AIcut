@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Film, Wand2, Captions, Share2, Cpu, ShieldCheck, Zap, Plus, Send, Calendar, Search, Kanban, Image } from 'lucide-react';
+import { Film, Wand2, Captions, Share2, Cpu, ShieldCheck, Zap, Plus, Send, Calendar, Search, Kanban, Image, Building2 } from 'lucide-react';
 import { useEditorStore } from '@/store/editorStore';
 
 const FEATURES = [
@@ -43,8 +43,9 @@ const ADVANTAGES = [
 const SOCIAL_SHORTCUTS = [
   { icon: Send,          label: 'Publish Now',  desc: 'Post to connected accounts immediately', path: '/mas/publish',   color: '#22c55e' },
   { icon: Calendar,      label: 'Schedule',     desc: 'Queue posts for a specific date & time', path: '/mas/scheduler', color: '#4d7cff' },
-  { icon: Image,         label: 'Image Posts',  desc: 'Create image + caption posts like BLK INK', path: '/mas/publish', color: '#e0a93a' },
-  { icon: Search,        label: 'Research',     desc: 'Trending topics & content scraper',       path: '/mas/research',  color: '#8aa6ff' },
+  { icon: Image,         label: 'Image Posts',  desc: 'Create image + caption posts',            path: '/mas/publish', color: '#e0a93a' },
+  { icon: Search,        label: 'Idea Scraper', desc: 'Trending topics & news ideas to post about', path: '/mas/research',  color: '#8aa6ff' },
+  { icon: Building2,     label: 'Listing Scraper', desc: 'Capture property listings from Zillow, Realtor & Redfin', path: '/mas/listings', color: '#34d399' },
   { icon: Wand2,         label: 'AI Generate',  desc: 'AI-written captions for every platform',  path: '/mas/content',   color: '#a78bfa' },
   { icon: Kanban,  label: 'Pipeline',     desc: 'Kanban board — ideas to published',       path: '/mas/pipeline',  color: '#f97316' },
 ];

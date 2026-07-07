@@ -26,6 +26,7 @@
     "build:notsc": "vite build && electron-builder",
     "package:win": "tsc && vite build && electron-packager . AICut --platform=win32 --arch=x64 --out=release --overwrite --icon=public/favicon.ico --app-version=0.1.0 --ignore=\"(^/src|^/release|\\.log$)\"",
     "preview": "vite preview",
+    "build:ext": "node scripts/build-ext.mjs",
     "pretest": "vite build --mode=test",
     "test": "vitest run",
     "test:e2e": "node scripts/e2e.mjs",

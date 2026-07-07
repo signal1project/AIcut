@@ -188,6 +188,48 @@ export interface ScrapeResponse {
   ideas: ContentIdea[];
 }
 
+// ── Listing Scraper ───────────────────────────────────────────────────────────
+
+export interface ComplianceFlagInfo {
+  rule: string;
+  severity: string;
+  matched: string;
+  detail: string;
+}
+
+export interface PropertyListingSummary {
+  id: string;
+  source: string;
+  mlsNumber: string | null;
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+  price: number | null;
+  beds: number | null;
+  baths: number | null;
+  sqft: number | null;
+  lotSqft: number | null;
+  yearBuilt: number | null;
+  propertyType: string | null;
+  status: string;
+  daysOnMarket: number | null;
+  description: string | null;
+  photoUrls: string[];
+  agentName: string | null;
+  agentPhone: string | null;
+  agentEmail: string | null;
+  listingUrl: string | null;
+  complianceOk: boolean;
+  complianceFlags: ComplianceFlagInfo[];
+  capturedAt: string;
+}
+
+export interface ListListingsResponse {
+  listings: PropertyListingSummary[];
+  total: number;
+}
+
 // ── Algorithm ─────────────────────────────────────────────────────────────────
 
 export interface AlgorithmHints {
@@ -330,6 +372,35 @@ export class MasApiClient {
     if (params?.limit) qs.set('limit', String(params.limit));
     const query = qs.toString() ? `?${qs.toString()}` : '';
     return this.req('GET', `/api/research/trending${query}`);
+  }
+
+  // ── Listing Scraper ─────────────────────────────────────────────────────────
+
+  listListings(params?: {
+    source?: string;
+    state?: string;
+    city?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<ListListingsResponse> {
+    const qs = new URLSearchParams();
+    if (params?.source) qs.set('source', params.source);
+    if (params?.state) qs.set('state', params.state);
+    if (params?.city) qs.set('city', params.city);
+    if (params?.status) qs.set('status', params.status);
+    if (params?.limit) qs.set('limit', String(params.limit));
+    if (params?.offset) qs.set('offset', String(params.offset));
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    return this.req('GET', `/api/listings${query}`);
+  }
+
+  getListing(id: string): Promise<{ listing: PropertyListingSummary }> {
+    return this.req('GET', `/api/listings/${encodeURIComponent(id)}`);
+  }
+
+  deleteListing(id: string): Promise<{ ok: boolean }> {
+    return this.req('DELETE', `/api/listings/${encodeURIComponent(id)}`);
   }
 
   // ── Platform Algorithm ──────────────────────────────────────────────────────

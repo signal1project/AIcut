@@ -32,6 +32,7 @@ import {
   AuditLogModel,
   TrendSignalModel,
   CampaignPackageModel,
+  PropertyListingModel,
 } from './models/mas';
 
 const configPath = app.getPath('userData');
@@ -64,6 +65,7 @@ export const AppDataSource = new DataSource({
     AuditLogModel,
     TrendSignalModel,
     CampaignPackageModel,
+    PropertyListingModel,
   ], // 实体或模型表
   migrations: Object.values(migrations), // 迁移类
   migrationsRun: true, // 确保在连接时自动运行迁移

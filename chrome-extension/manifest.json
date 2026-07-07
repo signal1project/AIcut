@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "AICut Listing Scraper",
+  "version": "1.0.0",
+  "description": "Capture real estate listings from Zillow, Realtor.com, and Redfin directly into AICut.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": [
+    "https://www.zillow.com/*",
+    "https://www.realtor.com/*",
+    "https://www.redfin.com/*",
+    "http://localhost:7474/*"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.zillow.com/homedetails/*",
+        "https://www.zillow.com/homes/*"
+      ],
+      "js": ["content/zillow.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.realtor.com/realestateandhomes-detail/*",
+        "https://www.realtor.com/realestateandhomes-search/*"
+      ],
+      "js": ["content/realtor.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.redfin.com/*/home/*",
+        "https://www.redfin.com/city/*"
+      ],
+      "js": ["content/redfin.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "AICut Listing Scraper"
+  },
+  "icons": {
+    "16":  "icons/icon16.png",
+    "48":  "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

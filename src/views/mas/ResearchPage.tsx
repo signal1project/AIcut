@@ -18,7 +18,7 @@ const SOURCE_VARIANT: Record<string, 'default' | 'info' | 'secondary'> = {
   twitter:      'secondary',
 };
 
-/** Research page: live trending signals from Google Trends + AI + content scraper. */
+/** Research page: live trending signals from Google Trends + AI, plus the Idea Scraper (Google News). */
 export default function ResearchPage(): React.ReactElement {
   const api = useMasApi();
   const [activeTab, setActiveTab] = useState<'trending' | 'scraper'>('trending');
@@ -62,7 +62,8 @@ export default function ResearchPage(): React.ReactElement {
           Research
         </h2>
         <p className="text-sm text-ink-muted mt-0.5">
-          Trending topics and live content scraping — find what to post about.
+          Trending topics and the Idea Scraper — find what to post about. For property
+          listings, use the Listing Scraper on the Listings page.
         </p>
       </div>
 
@@ -80,7 +81,7 @@ export default function ResearchPage(): React.ReactElement {
             )}
           >
             {tab === 'trending' ? <Flame size={12} /> : <Newspaper size={12} />}
-            {tab === 'trending' ? 'Trending' : 'Content Scraper'}
+            {tab === 'trending' ? 'Trending' : 'Idea Scraper'}
           </button>
         ))}
       </div>

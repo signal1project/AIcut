@@ -1,0 +1,238 @@
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  Building2,
+  RefreshCw,
+  Search,
+  Trash2,
+  ExternalLink,
+  ShieldCheck,
+  ShieldAlert,
+  Puzzle,
+} from 'lucide-react';
+import { useMasApi } from './useMasApi';
+import type { PropertyListingSummary } from '@mas/ui';
+import { Button, Badge, Card, CardContent, Input } from '@/components/ui';
+
+const SOURCE_VARIANT: Record<string, 'default' | 'info' | 'secondary'> = {
+  zillow: 'info',
+  realtor: 'default',
+  redfin: 'secondary',
+};
+
+function formatPrice(cents: number | null): string {
+  if (!cents) return 'Price N/A';
+  const dollars = cents / 100;
+  return dollars >= 1_000_000
+    ? `$${(dollars / 1_000_000).toFixed(2)}M`
+    : `$${dollars.toLocaleString()}`;
+}
+
+function specs(l: PropertyListingSummary): string {
+  return [
+    l.beds ? `${l.beds} bd` : null,
+    l.baths ? `${l.baths} ba` : null,
+    l.sqft ? `${l.sqft.toLocaleString()} sqft` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/**
+ * Listing Scraper page: browse property listings captured by the AICut
+ * Listing Scraper Chrome extension (Zillow / Realtor.com / Redfin).
+ * Not to be confused with the Idea Scraper on the Research page, which
+ * scrapes news topics — this one captures structured property data.
+ */
+export default function ListingScraperPage(): React.ReactElement {
+  const api = useMasApi();
+  const [listings, setListings] = useState<PropertyListingSummary[]>([]);
+  const [total, setTotal] = useState(0);
+  const [cityFilter, setCityFilter] = useState('');
+  const [appliedCity, setAppliedCity] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    if (!api) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.listListings({ city: appliedCity || undefined, limit: 100 });
+      setListings(result.listings);
+      setTotal(result.total);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load listings');
+    } finally {
+      setLoading(false);
+    }
+  }, [api, appliedCity]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const remove = async (id: string) => {
+    if (!api) return;
+    try {
+      await api.deleteListing(id);
+      setListings((prev) => prev.filter((l) => l.id !== id));
+      setTotal((t) => Math.max(0, t - 1));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed');
+    }
+  };
+
+  return (
+    <div className="p-6 max-w-3xl mx-auto space-y-4">
+      <div>
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-ink-strong">
+          <Building2 size={18} className="text-accent" />
+          Listing Scraper
+        </h2>
+        <p className="text-sm text-ink-muted mt-0.5">
+          Property listings captured from Zillow, Realtor.com and Redfin — ready to turn
+          into listing ads. Looking for post topics instead? That&apos;s the Idea Scraper
+          on the Research page.
+        </p>
+      </div>
+
+      {/* Extension hint */}
+      <Card>
+        <CardContent className="pt-4 pb-4">
+          <div className="flex items-start gap-3">
+            <Puzzle size={18} className="text-accent shrink-0 mt-0.5" />
+            <div className="text-xs text-ink-muted leading-relaxed">
+              <span className="font-medium text-ink-base">How to capture:</span> install the
+              AICut Listing Scraper Chrome extension (run <code>npm run build:ext</code>, then
+              load <code>dist-ext/</code> via chrome://extensions → Load unpacked). Browse any
+              listing on Zillow, Realtor.com or Redfin and click the green “Capture Listing”
+              button — it lands here automatically while AICut is running.
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Filter bar */}
+      <Card>
+        <CardContent className="pt-4">
+          <div className="flex gap-2">
+            <Input
+              placeholder="Filter by city (e.g. Houston)"
+              value={cityFilter}
+              onChange={(e) => setCityFilter(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && setAppliedCity(cityFilter.trim())}
+              className="flex-1"
+            />
+            <Button onClick={() => setAppliedCity(cityFilter.trim())} disabled={!api}>
+              <Search size={14} />
+              Filter
+            </Button>
+            <Button variant="ghost" onClick={refresh} disabled={!api || loading} title="Refresh">
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {error && (
+        <div className="rounded-md border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
+          {error}
+        </div>
+      )}
+
+      {!api && !loading && (
+        <div className="rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+          API not ready — waiting for the embedded server to start.
+        </div>
+      )}
+
+      {loading && listings.length === 0 && (
+        <div className="flex items-center justify-center py-12 gap-3 text-ink-muted text-sm">
+          <RefreshCw size={20} className="animate-spin text-accent" />
+          Loading captured listings…
+        </div>
+      )}
+
+      {!loading && api && listings.length === 0 && (
+        <p className="text-center text-ink-muted py-12 text-sm">
+          {appliedCity
+            ? `No captured listings match "${appliedCity}".`
+            : 'No listings captured yet — browse Zillow, Realtor.com or Redfin with the extension installed.'}
+        </p>
+      )}
+
+      {listings.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs text-ink-muted">
+            {total} listing{total === 1 ? '' : 's'} captured
+          </p>
+          {listings.map((l) => (
+            <Card key={l.id} className="hover:border-border/80 transition-colors">
+              <CardContent className="pt-3 pb-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center flex-wrap gap-2">
+                      <span className="text-sm font-semibold text-ink-strong">
+                        {l.address}, {l.city}, {l.state} {l.zip}
+                      </span>
+                      <Badge variant={SOURCE_VARIANT[l.source] ?? 'secondary'} className="text-xs">
+                        {l.source}
+                      </Badge>
+                      {l.status !== 'active' && (
+                        <Badge variant="secondary" className="text-xs">
+                          {l.status}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-ink-base mt-1">
+                      <span className="font-semibold text-accent">{formatPrice(l.price)}</span>
+                      {specs(l) && <span className="text-ink-muted"> · {specs(l)}</span>}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1.5">
+                      {l.complianceOk ? (
+                        <span className="flex items-center gap-1 text-xs text-success">
+                          <ShieldCheck size={12} /> Fair Housing clean
+                        </span>
+                      ) : (
+                        <span
+                          className="flex items-center gap-1 text-xs text-error"
+                          title={l.complianceFlags.map((f) => `${f.rule}: ${f.detail}`).join('\n')}
+                        >
+                          <ShieldAlert size={12} /> {l.complianceFlags.length} compliance flag
+                          {l.complianceFlags.length === 1 ? '' : 's'}
+                        </span>
+                      )}
+                      <span className="text-xs text-ink-subtle">
+                        {new Date(l.capturedAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {l.listingUrl && (
+                      <a
+                        href={l.listingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-ink-muted hover:text-accent transition-colors p-1.5"
+                        title="Open original listing"
+                      >
+                        <ExternalLink size={14} />
+                      </a>
+                    )}
+                    <button
+                      onClick={() => void remove(l.id)}
+                      className="text-ink-muted hover:text-error transition-colors p-1.5"
+                      title="Delete listing"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

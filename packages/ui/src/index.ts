@@ -29,6 +29,9 @@ export {
   type ContentIdea,
   type ScrapeResponse,
   type ConnectedAccountSummary,
+  type PropertyListingSummary,
+  type ListListingsResponse,
+  type ComplianceFlagInfo,
 } from './apiClient';
 
 export { PlatformBadge, type PlatformBadgeProps } from './components/PlatformBadge';
