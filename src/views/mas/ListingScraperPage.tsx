@@ -8,10 +8,15 @@ import {
   ShieldCheck,
   ShieldAlert,
   Puzzle,
+  Wand2,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { useMasApi } from './useMasApi';
-import type { PropertyListingSummary } from '@mas/ui';
+import type { PropertyListingSummary, ListingAdResult } from '@mas/ui';
 import { Button, Badge, Card, CardContent, Input } from '@/components/ui';
+
+const AD_PLATFORMS = ['facebook', 'instagram', 'linkedin'] as const;
 
 const SOURCE_VARIANT: Record<string, 'default' | 'info' | 'secondary'> = {
   zillow: 'info',
@@ -77,9 +82,40 @@ export default function ListingScraperPage(): React.ReactElement {
       await api.deleteListing(id);
       setListings((prev) => prev.filter((l) => l.id !== id));
       setTotal((t) => Math.max(0, t - 1));
+      setAds((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Delete failed');
     }
+  };
+
+  // ── Generate Listing Ad ────────────────────────────────────────────────────
+  const [ads, setAds] = useState<Record<string, ListingAdResult>>({});
+  const [generatingId, setGeneratingId] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const generateAd = async (id: string) => {
+    if (!api || generatingId) return;
+    setGeneratingId(id);
+    setError(null);
+    try {
+      const result = await api.generateListingAd(id, { platforms: [...AD_PLATFORMS] });
+      setAds((prev) => ({ ...prev, [id]: result }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ad generation failed');
+    } finally {
+      setGeneratingId(null);
+    }
+  };
+
+  const copyAd = async (key: string, body: string) => {
+    // Hashtags are already embedded in the generated body.
+    await navigator.clipboard.writeText(body);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 1500);
   };
 
   return (
@@ -208,6 +244,19 @@ export default function ListingScraperPage(): React.ReactElement {
                     </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      size="sm"
+                      onClick={() => void generateAd(l.id)}
+                      disabled={!api || generatingId !== null}
+                      title="Generate platform-ready listing ads"
+                    >
+                      {generatingId === l.id ? (
+                        <RefreshCw size={13} className="animate-spin" />
+                      ) : (
+                        <Wand2 size={13} />
+                      )}
+                      {ads[l.id] ? 'Regenerate' : 'Generate Ad'}
+                    </Button>
                     {l.listingUrl && (
                       <a
                         href={l.listingUrl}
@@ -228,6 +277,60 @@ export default function ListingScraperPage(): React.ReactElement {
                     </button>
                   </div>
                 </div>
+
+                {/* Generated ads */}
+                {ads[l.id] && (
+                  <div className="mt-3 pt-3 border-t border-border/60 space-y-2">
+                    <p className="text-xs text-ink-muted">
+                      Generated via{' '}
+                      <span className="font-medium text-ink-base">{ads[l.id].provider}</span>
+                      {ads[l.id].provider === 'template' &&
+                        ' — configure an AI provider in Settings for tailored copy'}
+                    </p>
+                    {ads[l.id].items.map((ad) => {
+                      const key = `${l.id}:${ad.platform}`;
+                      return (
+                        <div
+                          key={key}
+                          className="rounded-md bg-surface-2 border border-border/60 p-3"
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="info" className="text-xs">
+                                {ad.platform}
+                              </Badge>
+                              {ad.complianceOk ? (
+                                <span className="flex items-center gap-1 text-xs text-success">
+                                  <ShieldCheck size={11} /> compliant
+                                </span>
+                              ) : (
+                                <span
+                                  className="flex items-center gap-1 text-xs text-error"
+                                  title={ad.complianceFlags
+                                    .map((f) => `${f.rule}: ${f.detail}`)
+                                    .join('\n')}
+                                >
+                                  <ShieldAlert size={11} /> blocked — do not publish
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => void copyAd(key, ad.body)}
+                              className="flex items-center gap-1 text-xs text-ink-muted hover:text-accent transition-colors"
+                              title="Copy ad text"
+                            >
+                              {copiedKey === key ? <Check size={12} /> : <Copy size={12} />}
+                              {copiedKey === key ? 'Copied' : 'Copy'}
+                            </button>
+                          </div>
+                          <p className="text-xs text-ink-base whitespace-pre-wrap leading-relaxed">
+                            {ad.body}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}

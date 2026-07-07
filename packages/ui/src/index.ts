@@ -32,6 +32,8 @@ export {
   type PropertyListingSummary,
   type ListListingsResponse,
   type ComplianceFlagInfo,
+  type ListingAdResult,
+  type ListingAdItem,
 } from './apiClient';
 
 export { PlatformBadge, type PlatformBadgeProps } from './components/PlatformBadge';

@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { PLATFORMS } from '@mas/types';
 import type { ListingStore } from './listingStore';
+import type { ListingAdService } from './adService';
 
 const capturePayloadSchema = z.object({
   source: z.enum(['zillow', 'realtor', 'redfin', 'manual']),
@@ -26,6 +28,12 @@ const capturePayloadSchema = z.object({
   listingUrl: z.string().optional(),
 });
 
+const generateAdSchema = z.object({
+  platforms: z.array(z.enum(PLATFORMS)).min(1),
+  tone: z.string().optional(),
+  highlight: z.string().max(300).optional(),
+});
+
 const listQuerySchema = z.object({
   source: z.string().optional(),
   state: z.string().optional(),
@@ -38,16 +46,22 @@ const listQuerySchema = z.object({
 /**
  * Listing Scraper routes (mounted under the authed /api as /api/listings):
  *
- *   POST   /api/listings/capture — save a captured listing (dedupe by listingUrl)
- *   GET    /api/listings         — list with source/state/city/status filters
- *   GET    /api/listings/:id     — single listing detail
- *   DELETE /api/listings/:id     — remove a listing
+ *   POST   /api/listings/capture          — save a captured listing (dedupe by listingUrl)
+ *   GET    /api/listings                  — list with source/state/city/status filters
+ *   GET    /api/listings/:id              — single listing detail
+ *   DELETE /api/listings/:id              — remove a listing
+ *   POST   /api/listings/:id/generate-ad  — AI listing ad per platform (authed API only)
  *
  * The Chrome extension reaches `capture` through the fixed-port capture
  * server (see captureServer.ts) since it cannot obtain the rotating bearer
- * token; the UI and MCP agents use these authed routes.
+ * token; the UI and MCP agents use these authed routes. The capture server
+ * builds this router WITHOUT adService so ad generation (which spends AI
+ * credits) is never exposed unauthenticated.
  */
-export function createListingsRouter(store: ListingStore): Router {
+export function createListingsRouter(
+  store: ListingStore,
+  opts: { adService?: ListingAdService } = {},
+): Router {
   const router = Router();
 
   router.post('/capture', async (req, res, next) => {
@@ -78,6 +92,24 @@ export function createListingsRouter(store: ListingStore): Router {
         return;
       }
       res.json({ listing });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/:id/generate-ad', async (req, res, next) => {
+    try {
+      if (!opts.adService) {
+        res.status(503).json({ error: 'ad_generation_unavailable' });
+        return;
+      }
+      const body = generateAdSchema.parse(req.body);
+      const result = await opts.adService.generateAd(req.params.id, body);
+      if (!result) {
+        res.status(404).json({ error: 'listing_not_found' });
+        return;
+      }
+      res.json(result);
     } catch (err) {
       next(err);
     }

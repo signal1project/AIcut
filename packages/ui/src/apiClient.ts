@@ -230,6 +230,20 @@ export interface ListListingsResponse {
   total: number;
 }
 
+export interface ListingAdItem {
+  platform: Platform;
+  body: string;
+  hashtags: string[];
+  complianceOk: boolean;
+  complianceFlags: ComplianceFlagInfo[];
+}
+
+export interface ListingAdResult {
+  listingId: string;
+  provider: string;
+  items: ListingAdItem[];
+}
+
 // ── Algorithm ─────────────────────────────────────────────────────────────────
 
 export interface AlgorithmHints {
@@ -401,6 +415,13 @@ export class MasApiClient {
 
   deleteListing(id: string): Promise<{ ok: boolean }> {
     return this.req('DELETE', `/api/listings/${encodeURIComponent(id)}`);
+  }
+
+  generateListingAd(
+    id: string,
+    body: { platforms: Platform[]; tone?: string; highlight?: string },
+  ): Promise<ListingAdResult> {
+    return this.req('POST', `/api/listings/${encodeURIComponent(id)}/generate-ad`, body);
   }
 
   // ── Platform Algorithm ──────────────────────────────────────────────────────
