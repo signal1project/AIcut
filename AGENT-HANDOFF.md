@@ -1,63 +1,130 @@
 # AICut — Agent Handoff
 
-**Updated:** 2026-06-26 (Mick / ClaudeClaw)
-**Status:** Editor working, packaged, committed. GUI redesigned to CapCut quality. Agent bridge + onboarding live. Two items wait on Dale.
+**Updated:** 2026-07-07 (Mick / ClaudeClaw) — v0.6
+**Status:** ✅ 235 tests pass · tsc clean · vite build clean · v0.6 pushed to `main` (`f6c625b`)
+**Read this FIRST before touching the repo.**
 
 ---
 
 ## What AICut Is
-AI-powered desktop video editor (CapCut-style) on an Electron 33 + React 18 + Vite + TypeScript + Zustand + Tailwind 4 + fluent-ffmpeg stack. Forked from Social-Engine-Phase-A.
 
-- **Repo:** `C:\home\dalebrown138\projects\Social-Engine-AICut` (Windows-native shared folder; WSL view `/mnt/c/home/dalebrown138/projects/`). NOT in WSL `~/`.
-- **MCP wrapper repo:** `C:\home\dalebrown138\projects\Social-Engine-AICut-Hermes`
-- **Commits:** AICut `4a2a0e0`, `b122c68` (package script). AICut-Hermes `472c07f`.
+AI-powered desktop video editor + social media automation suite (CapCut competitor with a
+Buffer/Opus-Clip feature set bolted on), leaning real-estate. Fully local-first: FFmpeg,
+SQLite, and Windows SAPI TTS run on the user's machine; AI provider keys are optional and
+most features degrade gracefully without them.
 
-## How to Run
+- **Stack:** Electron 33 + React 18 + Vite + TypeScript + Zustand + Tailwind + TypeORM
+  (better-sqlite3) + fluent-ffmpeg + express (embedded APIs) + vitest.
+- **Repo:** `C:\home\dalebrown138\projects\Social-Engine-AICut` (Windows-native shared
+  folder — NOT WSL `~/`). GitHub: `signal1project/AIcut`, branch `main`.
+- **Local branch quirk:** work happens on `push-v4-2`; push with
+  `git push origin push-v4-2:main` (fast-forward).
+- **MCP wrapper repo (Hermes team's):** `Social-Engine-AICut-Hermes` (sibling folder).
+- **Naming rule (Dale, 2026-07-07):** "AICut" = this repo ONLY. The archived
+  `_archive\BLK-INK-Scraper` is reference-only; never build there.
+
+## How to Run / Verify
+
 ```powershell
-# Dev (Vite + Electron, hot reload):
 cd C:\home\dalebrown138\projects\Social-Engine-AICut
-npm run dev            # use `dev`, NOT dev:mac — adds chcp 65001 UTF-8 fix
-
-# Packaged app (runnable exe, no installer):
-npm run package:win    # → release\AICut-win32-x64\AICut.exe
-```
-Desktop shortcut `AICut.lnk` already points at the packaged exe.
-**Browser preview for fast UI iteration:** dev server serves on http://localhost:5173 (renders without Electron; IPC-dependent features no-op via the safe `src/lib/ipc.ts` stub).
-
-## One-Time Setup Gotchas
-- After `npm install`, run **`npm run rebuild`** once (electron-rebuild better-sqlite3 for Electron's ABI) or the onboarding DB fails to init in dev. `npm run package:win` / `build` handle this via postinstall.
-- Native modules built for **Windows node** — the repo must stay on the Windows path, not WSL `~/`.
-
-## What's Done This Session
-1. **Relocated** WSL → Windows shared folder (was violating the 6/19 canonical-path rule).
-2. **Blank screen FIXED** — root cause was `WindowControlButtons` calling `window.ipcRenderer.invoke` unguarded; with no preload the whole tree threw → ErrorBoundary blanked it. Fix: `src/lib/ipc.ts` safe accessor (real bridge in Electron, no-op stub in browser). Editor now renders in both.
-3. **CapCut GUI redesign** — graphite palette + blue accent (`src/index.css`), left tool-rail (Media/Audio/Text/Effects/AI/Accounts), gradient-clip timeline w/ video thumbnails + audio waveform, polished toolbar/preview/properties.
-4. **Agent bridge** — headless REST API on `127.0.0.1:4255` (bearer auth, loopback). `electron/main/aicuts/agentApi.ts` (probe/thumbnail/auto-edit/captions/export, explicit paths). Started by `startAgentBridge()` in `electron/main/index.ts`. Discovery file `%APPDATA%\aicuts\aicut-bridge.json` (url+token+pid). Tested: authed 200, unauthed 401.
-5. **MCP wrapper** — `Social-Engine-AICut-Hermes/index.mjs` (stdio MCP, 6 tools). Verified end-to-end with `test-client.mjs`.
-6. **Social onboarding** — `src/views/onboarding/ConnectAccounts.tsx`, OAuth-only modal for 8 platforms, reachable via the "Accounts" tool-rail button. Backend `startOnboardingBackend()` in index.ts = DB init + `registerMasIpc` only (guarded, NOT the full publish runtime). DB at `%APPDATA%\aicuts\database.sqlite`.
-7. **Desktop icon + packaging** — `launch-aicut.vbs`, `AICut.lnk`; `npm run package:win` (electron-packager, signing-free) → working `AICut.exe`.
-
-## Architecture Quick Map
-```
-Renderer (React)  ──IPC──>  Electron main (electron/main/)
-  src/views/editor/*           aicuts/  (ffmpegOps, autoEdit, agentApi)
-  src/views/onboarding/        mas/ipc  (OAuth onboarding)
-  src/store/editorStore.ts     server/  (Express, startApiServer)
-  src/lib/ipc.ts (safe IPC)    index.ts (startAgentBridge + startOnboardingBackend)
-
-Agents ──HTTP+token──> :4255 REST bridge ──> aicuts ops
-MCP clients ──stdio──> AICut-Hermes/index.mjs ──> :4255
+npm run dev          # dev app (use `dev`, NOT dev:mac — has chcp 65001 fix)
+npm test             # vitest — 235 pass, 10 skip (Electron-ABI, see below)
+npx tsc --noEmit     # typecheck
+npx vite build       # renderer + main + preload bundles
+npm run build:ext    # Chrome extension → dist-ext/
+npm run package:win  # → release\AICut-win32-x64\AICut.exe
 ```
 
-## OPEN — Waits on Dale (not unfinished code)
-1. **Live social connections** — register an OAuth app per platform (Meta/X/LinkedIn/etc.) and paste each client ID into the Accounts modal. Only Dale can (requires logging into each dev portal). The flow + token storage is built.
-2. **electron-builder NSIS installer** (optional) — `npm run build` fails on Windows: winCodeSign 7z extraction needs symlink privilege (admin/Developer Mode). Workaround already in place = `npm run package:win`. For a true installer, Dale enables Developer Mode or runs the build elevated.
-3. **Omobono bridge — DROPPED per Dale (2026-06-26).** Dale will have Omobono discover/use the REST bridge itself (discovery file has url+token). Do NOT edit `~/.hermes/profiles/omobono/` — that's the HermesClaw sphere. Reference snippet lives in `Social-Engine-AICut-Hermes/README.md`.
+**Gotchas**
+- After fresh `npm install`, run `npm run rebuild` (better-sqlite3 → Electron ABI).
+- DB tests (`masSchema`, `listingStore`) auto-skip under plain Node — that ABI mismatch is
+  expected, not a failure. Follow the `describe.skipIf(!nativeLoads)` pattern for new
+  DB-touching tests.
+- Windows paths only; repo must stay on the Windows filesystem.
 
-## Remaining Build-Out (future, not blocking)
-- Export smoke test (needs a real video file): import → timeline → export MP4.
-- Auto-Edit runtime auth (Claude via OAuth per Dale's no-API-keys rule).
-- Whisper captions (nodejs-whisper or HTTP API).
-- Undo/redo (store scaffolding exists, not wired).
-```
-```
+## Runtime Topology (three embedded servers, all loopback)
+
+| Server | Port | Auth | Purpose |
+|---|---|---|---|
+| MAS API | ephemeral | rotating bearer token | Everything under `/api/*` — publish, content, analytics, engagement, research, listings, clips, insights. Renderer gets url+token via IPC `mas:api-info`. **Discovery file (with token): `%APPDATA%\aicuts\api-port.json`** — local agents use this. |
+| Listing capture server | **7474** (`AICUT_CAPTURE_PORT`) | none (loopback+CORS) | Chrome-extension listing capture ONLY (`/api/listings/*` minus ad/video generation). Port inherited from retired BLK INK Scraper. |
+| Agent bridge | **4255** (`AICUT_BRIDGE_PORT`) | bearer | Video-editor ops for MCP agents (`/api/aicut/*`). Discovery: `%APPDATA%\aicuts\aicut-bridge.json`. |
+
+Generated artifacts: `%APPDATA%\aicuts\{listing-reels, clips, bio-page}\`. DB:
+`%APPDATA%\aicuts\database.sqlite` (TypeORM `synchronize:true` — new entities in
+`electron/db/index.ts` entities array auto-create tables).
+
+## Feature Map (v0.6) — module → API → UI
+
+| Feature | Backend module | API | UI |
+|---|---|---|---|
+| Video editor (timeline/speed/fades/export) | `electron/main/aicuts/` | bridge :4255 | `/editor` |
+| AI Auto-Edit + Auto-Captions | `aicuts/autoEdit.ts` | IPC | editor AI panel |
+| **Auto-Clip** (long video → captioned vertical shorts) | `electron/main/clips/` | `POST /api/clips/auto` | editor AI panel card |
+| Publish / schedule (8 platforms, webview + OAuth) | `publishEngine/`, `adapters/`, `scheduling/` | `POST /api/publish` | `/mas/publish`, `/mas/scheduler` |
+| AI content (posts, **A/B variants**, **carousels**, images) | `content/` | `POST /api/content/{generate,carousel,image}` | `/mas/content` |
+| **Brand Kit** (voice rules injected into every brief) | `settings/settings.ts` | IPC `mas:settings:{get,set}-brand-kit` | `/mas/brand` |
+| Idea Scraper + trending research | `research/` | `GET /api/research/{scrape,trending}` | `/mas/research` |
+| **Listing Scraper** (Chrome ext + paste-URL capture) | `listings/` | `POST /api/listings/capture`, `/capture-url` | `/mas/listings` + `chrome-extension/` |
+| **Generate Listing Ad** (compliance-gated copy) | `listings/adService.ts` | `POST /api/listings/:id/generate-ad` | Listings page button |
+| **Listing Video Generator** (photos → narrated reel) | `listings/videoService.ts` | `POST /api/listings/:id/generate-video` | "Create Reel" button |
+| Fair Housing / RESPA guard | `listings/complianceGuard.ts` | runs at capture + on all listing-ad output | shield badges |
+| **Best-time-to-post / calendar / evergreen recycle** | `insights/` | `GET /api/insights/{best-times,calendar}`, `POST /recycle` | Scheduler page |
+| **Competitor benchmarks** (manual snapshots) | `insights/router.ts` + settings | `/api/insights/competitors` CRUD | Analytics page |
+| **Bio page generator** (static HTML export) | `insights/bioPage.ts` | `POST /api/insights/bio-page` | Brand page |
+| Inbox (comments + AI reply drafts) | `engagement/` | `/api/engagement/*` | `/mas/engagement` |
+| Analytics snapshots | `analytics/` | `/api/analytics/*` | `/mas/analytics` |
+| Bulk CSV scheduling | client-side | (uses `/api/publish`) | Scheduler page |
+| Omobono workflow packages | `workflow/`, `capcut/` | `/api/workflow/*` | `/mas/pipeline`, `/mas/omobono` |
+
+**Composition root:** `electron/main/mas/runtime.ts` — every service is wired there and
+mounted as a `FeatureRoute`. Add new features as sibling modules
+(`service + router + index + __tests__`) and register in runtime.
+
+## What Needs Keys vs. What Works Keyless
+
+- **Keyless:** editor, listing capture (ext + URL), compliance guard, template listing ads,
+  listing reels **with narration** (Windows SAPI), auto-clip with pasted SRT/VTT
+  (heuristic picking), best-times, calendar, recycle, CSV import, bio page, competitors,
+  brand kit storage, Idea Scraper.
+- **AI provider (Settings/onboarding — OpenRouter OAuth or Ollama local both keyless-ish):**
+  AI post generation, A/B variants, carousels, AI-quality listing ads, AI clip picking,
+  AI auto-edit/captions.
+- **OpenAI key specifically:** Whisper transcription (auto-clip without a transcript),
+  image generation.
+- **Per-platform OAuth apps (Dale registers at dev portals):** API publishing, analytics
+  capture, engagement ingest. Webview login (`adapters/webviewBridge.ts`) works without.
+
+## Legal / Non-Negotiables
+
+- **Fair Housing Act + RESPA guard** (`listings/complianceGuard.ts`) runs on captured
+  listing descriptions and ALL generated listing-ad copy. Blocked copy is returned but
+  flagged `complianceOk:false` — UI marks it "blocked — do not publish". NEVER remove or
+  bypass this gate; extend patterns instead (tests in `__tests__/complianceGuard.test.ts`).
+- Ad/video generation endpoints live ONLY on the authed MAS API — never expose them on the
+  open :7474 capture server (unauthenticated AI-credit burn).
+
+## Docs Index
+
+- `docs/USER-GUIDE.md` — end-user onboarding, step by step (keep updated with features).
+- `OMOBONO-HANDOFF.md` — agent-integration surface for the Hermes team.
+- `HANDOFF.md` — older session notes (historical).
+- Mick's session memory: `C:\ClaudeClaw\.memory\{active-tasks,decisions-log}.md`.
+
+## Open Items / Roadmap
+
+1. **"Publish Reel" shortcut** — generated reel → Scheduler prefilled (next natural step).
+2. Whisper local fallback (whisper.cpp) so auto-clip transcription is fully keyless.
+3. Remove Background + Voice Studio (ElevenLabs) — editor AI panel stubs.
+4. Platform OAuth app registration — Dale, per dev portal (Meta/X/LinkedIn/etc.).
+5. NSIS installer needs admin/Developer Mode (winCodeSign symlink issue); `package:win`
+   works today.
+6. DM inbox — vendor-gated on messaging scopes for the platform OAuth apps.
+7. Undo/redo in the editor (store scaffolding exists, not wired).
+
+## How to Work With Dale
+
+Direct, systems-thinker, automation-first. Verify in the running app before claiming done
+(launch `npm run dev`, hit the API with the token from `api-port.json`, probe outputs with
+ffprobe). Commit messages: what shipped + what was verified. Push = `push-v4-2:main`.
+Flag anything legally sensitive (compliance, platform ToS) before building it.
