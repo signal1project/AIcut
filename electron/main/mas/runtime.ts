@@ -26,7 +26,11 @@ import {
   createResearchRouter,
 } from '../research';
 import { PlatformAlgorithmAgent, createAlgorithmRouter } from '../algorithm';
-import { TypeOrmListingStore, ListingAdService, createListingsRouter } from '../listings';
+import { TypeOrmListingStore, ListingAdService, ListingVideoService, createListingsRouter } from '../listings';
+import { InsightsService, createInsightsRouter } from '../insights';
+import { ClipService, createClipsRouter } from '../clips';
+import path from 'node:path';
+import os from 'node:os';
 import { createDefaultAgentRegistry, createAgentRouter } from '../agent';
 import { CapCutPackageService, createCapCutRouter } from '../capcut';
 import { TypeOrmCampaignPackageStore, SocialEngineWorkflowService, createWorkflowRouter } from '../workflow';
@@ -37,6 +41,8 @@ export interface MasRuntimeDeps {
   dataSource: DataSource;
   settings: Settings;
   credentials: CredentialManager;
+  /** Directory for generated artifacts (bio pages, reels). Defaults to ~/.aicut. */
+  dataDir?: string;
 }
 
 export interface MasRuntime {
@@ -52,6 +58,9 @@ export interface MasRuntime {
   capcut: CapCutPackageService;
   workflow: SocialEngineWorkflowService;
   listings: TypeOrmListingStore;
+  insights: InsightsService;
+  /** Root directory for generated artifacts (bio pages, listing reels). */
+  dataDir: string;
 }
 
 /**
@@ -61,6 +70,7 @@ export interface MasRuntime {
  */
 export function buildMasRuntime(deps: MasRuntimeDeps): MasRuntime {
   const { dataSource, settings, credentials } = deps;
+  const dataDir = deps.dataDir ?? path.join(os.homedir(), '.aicut');
 
   const oauth = createOAuthService(credentials);
   const queue = new RateLimitedQueues();
@@ -108,7 +118,12 @@ export function buildMasRuntime(deps: MasRuntimeDeps): MasRuntime {
   // Algorithm agent is created first (no deps) so ContentService can reference it.
   const algorithm = new PlatformAlgorithmAgent();
 
-  const content = new ContentService({ resolveProvider, resolveImageProvider, algorithmAgent: algorithm });
+  const content = new ContentService({
+    resolveProvider,
+    resolveImageProvider,
+    algorithmAgent: algorithm,
+    resolveBrandKit: () => settings.getBrandKit(),
+  });
 
   const analytics = new AnalyticsService({
     accounts,
@@ -162,6 +177,19 @@ export function buildMasRuntime(deps: MasRuntimeDeps): MasRuntime {
   const research = new TrendingResearchService(dataSource, trendFetchers);
   const listings = new TypeOrmListingStore(dataSource);
   const listingAds = new ListingAdService(listings, content);
+  const listingVideos = new ListingVideoService(listings, path.join(dataDir, 'listing-reels'));
+  const insights = new InsightsService({ dataSource, engine: publish, scheduler });
+  const clips = new ClipService({
+    outputDir: path.join(dataDir, 'clips'),
+    resolveOpenAiKey: () => settings.getProviderSettings('openai')?.apiKey ?? null,
+    resolveProvider: () => {
+      try {
+        return resolveProvider();
+      } catch {
+        return null;
+      }
+    },
+  });
   const agentRegistry = createDefaultAgentRegistry();
   const capcut = new CapCutPackageService();
   const packageStore = new TypeOrmCampaignPackageStore(dataSource);
@@ -184,8 +212,17 @@ export function buildMasRuntime(deps: MasRuntimeDeps): MasRuntime {
     { path: '/agent', router: createAgentRouter(agentRegistry) },
     { path: '/capcut', router: createCapCutRouter(capcut) },
     { path: '/workflow', router: createWorkflowRouter(workflow) },
-    { path: '/listings', router: createListingsRouter(listings, { adService: listingAds }) },
+    { path: '/listings', router: createListingsRouter(listings, { adService: listingAds, videoService: listingVideos }) },
+    { path: '/clips', router: createClipsRouter(clips) },
+    {
+      path: '/insights',
+      router: createInsightsRouter({
+        service: insights,
+        settings,
+        outputDir: path.join(dataDir, 'bio-page'),
+      }),
+    },
   ];
 
-  return { routes, scheduler, publish, content, analytics, engagement, research, algorithm, agentRegistry, capcut, workflow, listings };
+  return { routes, scheduler, publish, content, analytics, engagement, research, algorithm, agentRegistry, capcut, workflow, listings, insights, dataDir };
 }

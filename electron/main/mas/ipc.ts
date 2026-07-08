@@ -51,6 +51,18 @@ export function registerMasIpc(deps: MasIpcDeps): void {
     return { ok: true };
   });
 
+  // ── Brand kit ──────────────────────────────────────────────────────────────
+
+  ipcMain.handle('mas:settings:get-brand-kit', () => settings.getBrandKit());
+
+  ipcMain.handle(
+    'mas:settings:set-brand-kit',
+    (_e, kit: { voice: string; audience: string; hashtags: string[]; bannedWords: string[]; signature: string }) => {
+      settings.setBrandKit(kit);
+      return { ok: true };
+    },
+  );
+
   /**
    * Return settings status visible to the UI — no secrets included.
    * Renderer uses this to show/hide "Connected" badges.

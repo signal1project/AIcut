@@ -11,9 +11,11 @@ import {
   Wand2,
   Copy,
   Check,
+  Link,
+  Film,
 } from 'lucide-react';
 import { useMasApi } from './useMasApi';
-import type { PropertyListingSummary, ListingAdResult } from '@mas/ui';
+import type { PropertyListingSummary, ListingAdResult, ListingVideoResult } from '@mas/ui';
 import { Button, Badge, Card, CardContent, Input } from '@/components/ui';
 
 const AD_PLATFORMS = ['facebook', 'instagram', 'linkedin'] as const;
@@ -118,6 +120,43 @@ export default function ListingScraperPage(): React.ReactElement {
     setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 1500);
   };
 
+  // ── Capture by URL ─────────────────────────────────────────────────────────
+  const [captureUrl, setCaptureUrl] = useState('');
+  const [capturing, setCapturing] = useState(false);
+
+  const captureByUrl = async () => {
+    if (!api || !captureUrl.trim()) return;
+    setCapturing(true);
+    setError(null);
+    try {
+      await api.captureListingUrl(captureUrl.trim());
+      setCaptureUrl('');
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'URL capture failed');
+    } finally {
+      setCapturing(false);
+    }
+  };
+
+  // ── Listing reel generation ────────────────────────────────────────────────
+  const [reels, setReels] = useState<Record<string, ListingVideoResult>>({});
+  const [reelBusyId, setReelBusyId] = useState<string | null>(null);
+
+  const createReel = async (id: string) => {
+    if (!api || reelBusyId) return;
+    setReelBusyId(id);
+    setError(null);
+    try {
+      const result = await api.generateListingVideo(id);
+      setReels((prev) => ({ ...prev, [id]: result }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Reel generation failed');
+    } finally {
+      setReelBusyId(null);
+    }
+  };
+
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-4">
       <div>
@@ -145,6 +184,29 @@ export default function ListingScraperPage(): React.ReactElement {
               button — it lands here automatically while AICut is running.
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Capture by URL */}
+      <Card>
+        <CardContent className="pt-4">
+          <div className="flex gap-2">
+            <Input
+              placeholder="Paste a listing URL to capture without the extension…"
+              value={captureUrl}
+              onChange={(e) => setCaptureUrl(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && void captureByUrl()}
+              className="flex-1"
+            />
+            <Button onClick={() => void captureByUrl()} disabled={!api || !captureUrl.trim() || capturing}>
+              {capturing ? <RefreshCw size={14} className="animate-spin" /> : <Link size={14} />}
+              Capture URL
+            </Button>
+          </div>
+          <p className="text-xs text-ink-muted mt-2">
+            Works on pages with structured listing data (schema.org / OpenGraph). Bot-walled pages
+            still need the extension.
+          </p>
         </CardContent>
       </Card>
 
@@ -257,6 +319,20 @@ export default function ListingScraperPage(): React.ReactElement {
                       )}
                       {ads[l.id] ? 'Regenerate' : 'Generate Ad'}
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void createReel(l.id)}
+                      disabled={!api || reelBusyId !== null}
+                      title="Create a vertical video reel from the listing photos (ken burns + narration)"
+                    >
+                      {reelBusyId === l.id ? (
+                        <RefreshCw size={13} className="animate-spin" />
+                      ) : (
+                        <Film size={13} />
+                      )}
+                      Create Reel
+                    </Button>
                     {l.listingUrl && (
                       <a
                         href={l.listingUrl}
@@ -277,6 +353,18 @@ export default function ListingScraperPage(): React.ReactElement {
                     </button>
                   </div>
                 </div>
+
+                {/* Generated reel */}
+                {reels[l.id] && (
+                  <div className="mt-3 pt-3 border-t border-border/60">
+                    <p className="text-xs text-success flex items-center gap-1.5">
+                      <Film size={12} />
+                      Reel ready ({reels[l.id].durationSeconds}s, {reels[l.id].photosUsed} photos
+                      {reels[l.id].narrated ? ', narrated' : ''})
+                    </p>
+                    <p className="text-xs text-ink-muted mt-1 break-all select-all">{reels[l.id].path}</p>
+                  </div>
+                )}
 
                 {/* Generated ads */}
                 {ads[l.id] && (

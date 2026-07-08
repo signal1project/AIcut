@@ -8,6 +8,14 @@ const generateSchema = z.object({
   brief: z.string().min(1),
   platforms: z.array(z.enum(PLATFORMS)).min(1),
   tone: z.string().optional(),
+  variants: z.number().int().min(1).max(3).optional(),
+});
+
+const carouselSchema = z.object({
+  brief: z.string().min(1),
+  platform: z.enum(PLATFORMS),
+  slideCount: z.number().int().min(3).max(10).optional(),
+  tone: z.string().optional(),
 });
 
 const imageSchema = z.object({
@@ -25,6 +33,16 @@ export function createContentRouter(service: ContentService): Router {
     asyncHandler(async (req, res) => {
       const b = req.body as z.infer<typeof generateSchema>;
       const result = await service.generate(b);
+      res.json(result);
+    }),
+  );
+
+  router.post(
+    '/carousel',
+    validateBody(carouselSchema),
+    asyncHandler(async (req, res) => {
+      const b = req.body as z.infer<typeof carouselSchema>;
+      const result = await service.generateCarousel(b);
       res.json(result);
     }),
   );

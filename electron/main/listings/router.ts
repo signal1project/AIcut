@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { PLATFORMS } from '@mas/types';
 import type { ListingStore } from './listingStore';
 import type { ListingAdService } from './adService';
+import type { ListingVideoService } from './videoService';
+import { captureFromUrl } from './urlCapture';
 
 const capturePayloadSchema = z.object({
   source: z.enum(['zillow', 'realtor', 'redfin', 'manual']),
@@ -34,6 +36,16 @@ const generateAdSchema = z.object({
   highlight: z.string().max(300).optional(),
 });
 
+const captureUrlSchema = z.object({
+  url: z.string().url(),
+});
+
+const generateVideoSchema = z.object({
+  maxPhotos: z.number().int().min(1).max(8).optional(),
+  secondsPerPhoto: z.number().min(2).max(6).optional(),
+  narration: z.boolean().optional(),
+});
+
 const listQuerySchema = z.object({
   source: z.string().optional(),
   state: z.string().optional(),
@@ -60,7 +72,7 @@ const listQuerySchema = z.object({
  */
 export function createListingsRouter(
   store: ListingStore,
-  opts: { adService?: ListingAdService } = {},
+  opts: { adService?: ListingAdService; videoService?: ListingVideoService } = {},
 ): Router {
   const router = Router();
 
@@ -92,6 +104,43 @@ export function createListingsRouter(
         return;
       }
       res.json({ listing });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Paste-a-URL capture — parses schema.org JSON-LD / OpenGraph server-side.
+  router.post('/capture-url', async (req, res, next) => {
+    try {
+      const { url } = captureUrlSchema.parse(req.body);
+      const payload = await captureFromUrl(url);
+      if (!payload) {
+        res.status(422).json({
+          error: 'listing_not_extractable',
+          hint: 'This page does not expose structured listing data — use the Chrome extension instead.',
+        });
+        return;
+      }
+      const listing = await store.capture(payload);
+      res.status(201).json({ listing });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/:id/generate-video', async (req, res, next) => {
+    try {
+      if (!opts.videoService) {
+        res.status(503).json({ error: 'video_generation_unavailable' });
+        return;
+      }
+      const body = generateVideoSchema.parse(req.body ?? {});
+      const result = await opts.videoService.generateVideo(req.params.id, body);
+      if (!result) {
+        res.status(404).json({ error: 'listing_not_found' });
+        return;
+      }
+      res.json(result);
     } catch (err) {
       next(err);
     }

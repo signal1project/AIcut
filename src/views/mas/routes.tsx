@@ -6,6 +6,7 @@ import EngagementPage from './EngagementPage';
 import OnboardingWizard from './OnboardingWizard';
 import ResearchPage from './ResearchPage';
 import ListingScraperPage from './ListingScraperPage';
+import BrandPage from './BrandPage';
 import PipelinePage from './PipelinePage';
 import OmobonoPage from './OmobonoPage';
 import SchedulerPage from './SchedulerPage';
@@ -37,6 +38,11 @@ export const masRoutes = [
     path: '/mas/listings',
     element: <ListingScraperPage />,
     meta: { name: 'Listings' },
+  },
+  {
+    path: '/mas/brand',
+    element: <BrandPage />,
+    meta: { name: 'Brand' },
   },
   {
     path: '/mas/analytics',

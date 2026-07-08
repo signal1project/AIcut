@@ -114,10 +114,86 @@ export interface GeneratedContent {
   platform: Platform;
   body: string;
   hashtags: string[];
+  variant?: number;
 }
 export interface GenerateResult {
   provider: string;
   items: GeneratedContent[];
+}
+
+export interface CarouselSlide {
+  index: number;
+  title: string;
+  body: string;
+  imagePrompt: string;
+}
+
+export interface CarouselResult {
+  provider: string;
+  platform: Platform;
+  caption: string;
+  hashtags: string[];
+  slides: CarouselSlide[];
+}
+
+// ── Insights ──────────────────────────────────────────────────────────────────
+
+export interface CalendarEntry {
+  id: string;
+  accountId: string;
+  platform: string;
+  runAt: string;
+  status: string;
+  body: string;
+}
+
+export interface BestTimeSlotInfo {
+  dayOfWeek: number;
+  hour: number;
+  avgEngagements: number;
+  sampleSize: number;
+  label: string;
+  nextOccurrence: string;
+}
+
+export interface BestTimesResult {
+  slots: BestTimeSlotInfo[];
+  basedOn: 'history' | 'defaults';
+  sampleSize: number;
+}
+
+export interface RecycleOutcome {
+  requeued: Array<{
+    sourcePostId: string;
+    accountId: string;
+    platform: string;
+    runAt: string;
+    scheduledPostIds: string[];
+  }>;
+  skipped: number;
+}
+
+export interface CompetitorEntry {
+  id: string;
+  name: string;
+  platform: string;
+  handle: string;
+  notes: string;
+  snapshots: Array<{ date: string; followers: number; engagementRate?: number }>;
+}
+
+export interface ListingVideoResult {
+  listingId: string;
+  path: string;
+  durationSeconds: number;
+  photosUsed: number;
+  narrated: boolean;
+}
+
+export interface AutoClipResult {
+  transcriptSource: 'provided' | 'whisper';
+  pickedBy: 'ai' | 'heuristic';
+  clips: Array<{ path: string; start: number; end: number; durationSeconds: number; hook: string }>;
 }
 
 export interface AnalyticsSnapshot {
@@ -333,8 +409,22 @@ export class MasApiClient {
     return this.req('POST', '/api/publish', body);
   }
 
-  generateContent(body: { brief: string; platforms: Platform[]; tone?: string }): Promise<GenerateResult> {
+  generateContent(body: {
+    brief: string;
+    platforms: Platform[];
+    tone?: string;
+    variants?: number;
+  }): Promise<GenerateResult> {
     return this.req('POST', '/api/content/generate', body);
+  }
+
+  generateCarousel(body: {
+    brief: string;
+    platform: Platform;
+    slideCount?: number;
+    tone?: string;
+  }): Promise<CarouselResult> {
+    return this.req('POST', '/api/content/carousel', body);
   }
 
   generateImage(body: { prompt: string; width?: number; height?: number }): Promise<{ url: string }> {
@@ -422,6 +512,78 @@ export class MasApiClient {
     body: { platforms: Platform[]; tone?: string; highlight?: string },
   ): Promise<ListingAdResult> {
     return this.req('POST', `/api/listings/${encodeURIComponent(id)}/generate-ad`, body);
+  }
+
+  generateListingVideo(
+    id: string,
+    body: { maxPhotos?: number; secondsPerPhoto?: number; narration?: boolean } = {},
+  ): Promise<ListingVideoResult> {
+    return this.req('POST', `/api/listings/${encodeURIComponent(id)}/generate-video`, body);
+  }
+
+  captureListingUrl(url: string): Promise<{ listing: PropertyListingSummary }> {
+    return this.req('POST', '/api/listings/capture-url', { url });
+  }
+
+  // ── Clips ───────────────────────────────────────────────────────────────────
+
+  autoClip(body: {
+    videoPath: string;
+    transcriptSrt?: string;
+    maxClips?: number;
+    clipSeconds?: number;
+    vertical?: boolean;
+    burnCaptions?: boolean;
+  }): Promise<AutoClipResult> {
+    return this.req('POST', '/api/clips/auto', body);
+  }
+
+  // ── Insights ────────────────────────────────────────────────────────────────
+
+  getCalendar(from?: string, to?: string): Promise<{ entries: CalendarEntry[] }> {
+    const qs = new URLSearchParams();
+    if (from) qs.set('from', from);
+    if (to) qs.set('to', to);
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    return this.req('GET', `/api/insights/calendar${query}`);
+  }
+
+  getBestTimes(platform?: string): Promise<BestTimesResult> {
+    const query = platform ? `?platform=${encodeURIComponent(platform)}` : '';
+    return this.req('GET', `/api/insights/best-times${query}`);
+  }
+
+  recycleTopPosts(body: { count?: number; spacingHours?: number } = {}): Promise<RecycleOutcome> {
+    return this.req('POST', '/api/insights/recycle', { count: 3, spacingHours: 24, ...body });
+  }
+
+  listCompetitors(): Promise<{ competitors: CompetitorEntry[] }> {
+    return this.req('GET', '/api/insights/competitors');
+  }
+
+  addCompetitor(body: { name: string; platform: string; handle: string; notes?: string }): Promise<{ competitor: CompetitorEntry }> {
+    return this.req('POST', '/api/insights/competitors', { notes: '', ...body });
+  }
+
+  addCompetitorSnapshot(id: string, body: { followers: number; engagementRate?: number }): Promise<{ competitor: CompetitorEntry }> {
+    return this.req('POST', `/api/insights/competitors/${encodeURIComponent(id)}/snapshot`, body);
+  }
+
+  deleteCompetitor(id: string): Promise<{ ok: boolean }> {
+    return this.req('DELETE', `/api/insights/competitors/${encodeURIComponent(id)}`);
+  }
+
+  generateBioPage(body: {
+    name: string;
+    tagline?: string;
+    brokerage?: string;
+    phone?: string;
+    email?: string;
+    accentColor?: string;
+    links: Array<{ label: string; url: string }>;
+    listings?: Array<{ address: string; price?: string; specs?: string; url?: string; photoUrl?: string }>;
+  }): Promise<{ path: string; bytes: number }> {
+    return this.req('POST', '/api/insights/bio-page', body);
   }
 
   // ── Platform Algorithm ──────────────────────────────────────────────────────

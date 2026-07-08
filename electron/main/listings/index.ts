@@ -11,3 +11,12 @@ export {
 } from './adService';
 export { startListingCaptureServer, type CaptureServer } from './captureServer';
 export type { ListingCapturePayload, PropertyListingSummary, ListingSource } from './types';
+export {
+  ListingVideoService,
+  buildKenBurnsFilter,
+  buildNarrationScript,
+  escapeDrawtext,
+  type ListingVideoResult,
+  type ListingVideoOptions,
+} from './videoService';
+export { extractListingFromHtml, captureFromUrl } from './urlCapture';

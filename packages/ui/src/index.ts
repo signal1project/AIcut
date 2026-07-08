@@ -34,6 +34,15 @@ export {
   type ComplianceFlagInfo,
   type ListingAdResult,
   type ListingAdItem,
+  type CarouselResult,
+  type CarouselSlide,
+  type CalendarEntry,
+  type BestTimesResult,
+  type BestTimeSlotInfo,
+  type RecycleOutcome,
+  type CompetitorEntry,
+  type ListingVideoResult,
+  type AutoClipResult,
 } from './apiClient';
 
 export { PlatformBadge, type PlatformBadgeProps } from './components/PlatformBadge';

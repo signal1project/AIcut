@@ -28,17 +28,24 @@ export async function startMas(dataSource: DataSource, settingsStore: SettingsSt
 
   const settings = new Settings(settingsStore);
   const credentials = getCredentialManager();
-  const runtime = buildMasRuntime({ dataSource, settings, credentials });
+  const runtime = buildMasRuntime({
+    dataSource,
+    settings,
+    credentials,
+    dataDir: app.getPath('userData'),
+  });
   const api = await startApiServer({ routes: runtime.routes });
 
   ipcMain.handle('mas:api-info', () => ({ baseUrl: api.url, token: api.token }));
   registerMasIpc({ dataSource, settings, credentials });
 
-  // Write port-discovery file so Hermes_Social can find us
+  // Write discovery file so local agents (Hermes_Social, Omobono) can find us.
+  // Includes the bearer token — same loopback trust model as aicut-bridge.json.
   try {
     const portFile = path.join(app.getPath('userData'), 'api-port.json');
     fs.writeFileSync(portFile, JSON.stringify({
       port:      new URL(api.url).port,
+      token:     api.token,
       pid:       process.pid,
       startedAt: new Date().toISOString(),
     }));

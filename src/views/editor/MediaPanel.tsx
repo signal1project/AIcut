@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Plus, Film, Music, Loader2, Type, Sparkles, UploadCloud, Wand2, Captions, Mic, Eraser } from 'lucide-react';
+import { Plus, Film, Music, Loader2, Type, Sparkles, UploadCloud, Wand2, Captions, Mic, Eraser, Scissors } from 'lucide-react';
 import { useEditorStore, type MediaItem } from '@/store/editorStore';
 import { ipc } from '@/lib/ipc';
 import { v4 as uuidv4 } from 'uuid';
+import { useMasApi } from '@/views/mas/useMasApi';
 
 export type PanelSection = 'media' | 'audio' | 'text' | 'effects' | 'ai';
 
@@ -32,6 +33,41 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
   const [captionsBusy, setCaptionsBusy] = useState(false);
   const [autoEditPrompt, setAutoEditPrompt] = useState('');
   const [autoEditBusy, setAutoEditBusy] = useState(false);
+  const masApi = useMasApi();
+  const [clipSrt, setClipSrt] = useState('');
+  const [clipBusy, setClipBusy] = useState(false);
+  const [clipStatus, setClipStatus] = useState<string | null>(null);
+
+  const handleAutoClip = async () => {
+    const sourceVideo = mediaLibrary.find((m) => m.type === 'video');
+    if (!masApi || !sourceVideo) return;
+    setClipBusy(true);
+    setClipStatus(null);
+    try {
+      const result = await masApi.autoClip({
+        videoPath: sourceVideo.src,
+        transcriptSrt: clipSrt.trim() || undefined,
+        maxClips: 3,
+      });
+      for (const clip of result.clips) {
+        addMediaItem({
+          id: uuidv4(),
+          name: clip.hook ? `Clip: ${clip.hook.slice(0, 40)}` : `Clip ${clip.start}s`,
+          src: clip.path,
+          duration: clip.durationSeconds,
+          type: 'video',
+        } as MediaItem);
+      }
+      setClipStatus(
+        `✓ ${result.clips.length} clip${result.clips.length === 1 ? '' : 's'} added to library (picked by ${result.pickedBy})`,
+      );
+      setClipSrt('');
+    } catch (err) {
+      setClipStatus(err instanceof Error ? err.message : 'Auto-clip failed');
+    } finally {
+      setClipBusy(false);
+    }
+  };
 
   const handleImport = async () => {
     setImporting(true);
@@ -312,6 +348,32 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
               >
                 {autoEditBusy ? <><Loader2 size={11} className="animate-spin" />Editing…</> : 'Apply AI Edit'}
               </button>
+            </div>
+
+            {/* Auto-Clip (Opus-Clip-style repurposing) */}
+            <div className="p-3 rounded-xl bg-[#1d1d22] border border-[#26262d]">
+              <div className="flex items-center gap-2 mb-2">
+                <Scissors size={14} className="text-[#34d399]" />
+                <span className="text-[12px] font-semibold text-ink-strong">Auto-Clip</span>
+              </div>
+              <p className="text-[10px] text-[#71717f] mb-2.5">
+                Finds the best moments in your first library video and cuts vertical short clips with
+                burned captions. Paste an SRT/VTT transcript, or leave empty to use Whisper (OpenAI key in Settings).
+              </p>
+              <textarea
+                value={clipSrt}
+                onChange={(e) => setClipSrt(e.target.value)}
+                placeholder="Optional: paste SRT/VTT transcript…"
+                className="w-full bg-[#0c0c0f] text-[10px] text-ink-base rounded-lg p-2 h-16 resize-none border border-[#303039] focus:outline-none focus:border-[#34d399] placeholder:text-[#4a4a55]"
+              />
+              <button
+                onClick={handleAutoClip}
+                disabled={clipBusy || !masApi || !mediaLibrary.some((m) => m.type === 'video')}
+                className="mt-2 w-full flex items-center justify-center gap-1.5 bg-[#12352a] hover:bg-[#174534] disabled:opacity-50 text-[#34d399] text-[11px] font-medium rounded-lg py-2 transition-colors"
+              >
+                {clipBusy ? <><Loader2 size={11} className="animate-spin" />Clipping…</> : 'Find & Cut Clips'}
+              </button>
+              {clipStatus && <p className="text-[10px] text-[#a1a1ab] mt-1.5">{clipStatus}</p>}
             </div>
 
             {/* Remove Background stub */}

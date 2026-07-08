@@ -3,7 +3,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { toast } from 'sonner';
 import { Lightbulb, TrendingUp, ChevronDown } from 'lucide-react';
 import { PLATFORMS, type Platform } from '@mas/types';
-import { PlatformBadge, type GeneratedContent } from '@mas/ui';
+import { PlatformBadge, type GeneratedContent, type CarouselResult } from '@mas/ui';
 import { useMasApi } from './useMasApi';
 import { useAlgorithmHints } from './useAlgorithmHints';
 import {
@@ -30,6 +30,9 @@ export default function ContentPage(): React.ReactElement {
   const [items, setItems] = useState<GeneratedContent[]>([]);
   const [selectedPlatforms, setSelectedPlatforms] = useState<Platform[]>(['facebook', 'instagram']);
   const [openHint, setOpenHint] = useState<Platform | null>(null);
+  const [mode, setMode] = useState<'posts' | 'carousel'>('posts');
+  const [variants, setVariants] = useState(1);
+  const [carousel, setCarousel] = useState<CarouselResult | null>(null);
 
   const { hints, loading: hintsLoading } = useAlgorithmHints(api, selectedPlatforms);
 
@@ -49,8 +52,15 @@ export default function ContentPage(): React.ReactElement {
     if (!api) return;
     setLoading(true);
     try {
-      const result = await api.generateContent(values);
-      setItems(result.items);
+      if (mode === 'carousel') {
+        const platform = selectedPlatforms[0] ?? 'instagram';
+        setItems([]);
+        setCarousel(await api.generateCarousel({ brief: values.brief, platform, tone: values.tone }));
+      } else {
+        setCarousel(null);
+        const result = await api.generateContent({ ...values, variants });
+        setItems(result.items);
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Generation failed');
     } finally {
@@ -105,8 +115,50 @@ export default function ContentPage(): React.ReactElement {
               <Input id="tone" placeholder="excited, professional, witty…" {...register('tone')} />
             </div>
 
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="space-y-1.5">
+                <Label>Format</Label>
+                <div className="flex gap-1 bg-surface-2 p-1 rounded-lg w-fit">
+                  {(['posts', 'carousel'] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setMode(m)}
+                      className={cn(
+                        'px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                        mode === m ? 'bg-surface-3 text-ink-strong shadow-sm' : 'text-ink-muted hover:text-ink-base',
+                      )}
+                    >
+                      {m === 'posts' ? 'Posts' : 'Carousel'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {mode === 'posts' && (
+                <div className="space-y-1.5">
+                  <Label>A/B variants</Label>
+                  <div className="flex gap-1 bg-surface-2 p-1 rounded-lg w-fit">
+                    {[1, 2, 3].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setVariants(n)}
+                        className={cn(
+                          'px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                          variants === n ? 'bg-surface-3 text-ink-strong shadow-sm' : 'text-ink-muted hover:text-ink-base',
+                        )}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <Button type="submit" loading={loading} disabled={!api}>
-              Generate
+              {mode === 'carousel' ? 'Generate Carousel' : 'Generate'}
             </Button>
           </form>
         </CardContent>
@@ -193,8 +245,11 @@ export default function ContentPage(): React.ReactElement {
         <div className="space-y-3">
           {items.map((item, idx) => (
             <Card key={idx}>
-              <CardHeader className="pb-2">
+              <CardHeader className="pb-2 flex-row items-center gap-2">
                 <PlatformBadge platform={item.platform} />
+                {item.variant != null && (
+                  <Badge variant="secondary" className="text-xs">Variant {item.variant}</Badge>
+                )}
               </CardHeader>
               <CardContent className="space-y-2">
                 <p className="text-sm text-ink-base whitespace-pre-wrap">{item.body}</p>
@@ -211,7 +266,40 @@ export default function ContentPage(): React.ReactElement {
         </div>
       )}
 
-      {items.length === 0 && !loading && (
+      {/* Carousel result */}
+      {carousel && (
+        <div className="space-y-3">
+          <Card>
+            <CardHeader className="pb-2 flex-row items-center gap-2">
+              <PlatformBadge platform={carousel.platform} />
+              <Badge variant="info" className="text-xs">Carousel · {carousel.slides.length} slides</Badge>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-sm text-ink-base whitespace-pre-wrap">{carousel.caption}</p>
+              {carousel.hashtags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {carousel.hashtags.map((tag) => (
+                    <Badge key={tag} variant="info" className="text-xs">{tag}</Badge>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          {carousel.slides.map((slide) => (
+            <Card key={slide.index}>
+              <CardContent className="pt-3 pb-3">
+                <p className="text-xs text-ink-muted mb-1">Slide {slide.index} — {slide.title}</p>
+                <p className="text-sm text-ink-base whitespace-pre-wrap">{slide.body}</p>
+                {slide.imagePrompt && (
+                  <p className="text-xs text-ink-subtle mt-1.5 italic">Visual: {slide.imagePrompt}</p>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {items.length === 0 && !carousel && !loading && (
         <p className="text-center text-ink-muted py-8 text-sm">
           No generated content yet — fill in the brief and click Generate
         </p>

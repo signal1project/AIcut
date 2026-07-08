@@ -32,7 +32,37 @@ const K = {
   providerKey: (n: AIProviderName) => `mas.settings.ai.key.${n}`,
   providerModel: (n: AIProviderName) => `mas.settings.ai.model.${n}`,
   ollamaBaseUrl: 'mas.settings.ai.ollama.baseUrl',
+  brandKit: 'mas.settings.brand.kit',
+  competitors: 'mas.settings.competitors',
 };
+
+/**
+ * Brand voice profile injected into every AI content brief so generated copy
+ * stays on-brand across sessions and platforms.
+ */
+export interface BrandKit {
+  /** e.g. "confident, warm, no hype" */
+  voice: string;
+  /** e.g. "first-time homebuyers in Houston" */
+  audience: string;
+  /** Hashtags appended/preferred on every post. */
+  hashtags: string[];
+  /** Words/phrases the AI must never use. */
+  bannedWords: string[];
+  /** Optional signature/CTA line. */
+  signature: string;
+}
+
+/** Manually-tracked competitor for benchmarking. */
+export interface CompetitorEntry {
+  id: string;
+  name: string;
+  platform: string;
+  handle: string;
+  notes: string;
+  /** Manual metric snapshots: { date, followers, engagementRate? } */
+  snapshots: Array<{ date: string; followers: number; engagementRate?: number }>;
+}
 
 /** Typed accessor over persisted app settings used by the MAS runtime. */
 export class Settings {
@@ -133,6 +163,36 @@ export class Settings {
 
   setOllamaBaseUrl(url: string): void {
     this.store.set(K.ollamaBaseUrl, url);
+  }
+
+  // ── Brand kit ──────────────────────────────────────────────────────────────
+
+  getBrandKit(): BrandKit | null {
+    const raw = this.store.get(K.brandKit);
+    if (!raw || typeof raw !== 'object') return null;
+    const kit = raw as Partial<BrandKit>;
+    return {
+      voice: kit.voice ?? '',
+      audience: kit.audience ?? '',
+      hashtags: Array.isArray(kit.hashtags) ? kit.hashtags : [],
+      bannedWords: Array.isArray(kit.bannedWords) ? kit.bannedWords : [],
+      signature: kit.signature ?? '',
+    };
+  }
+
+  setBrandKit(kit: BrandKit): void {
+    this.store.set(K.brandKit, kit);
+  }
+
+  // ── Competitor tracking (manual benchmarks) ────────────────────────────────
+
+  getCompetitors(): CompetitorEntry[] {
+    const raw = this.store.get(K.competitors);
+    return Array.isArray(raw) ? (raw as CompetitorEntry[]) : [];
+  }
+
+  setCompetitors(entries: CompetitorEntry[]): void {
+    this.store.set(K.competitors, entries);
   }
 
   // ── Image generation (always OpenAI) ──────────────────────────────────────

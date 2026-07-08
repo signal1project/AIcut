@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, Send, RefreshCw, Trash2 } from 'lucide-react';
-import { PubType, PLATFORMS, type Platform } from '@mas/types';
-import { PlatformBadge } from '@mas/ui';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Calendar, Clock, Send, RefreshCw, Zap, Upload, Recycle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { PubType, type Platform } from '@mas/types';
+import { PlatformBadge, type BestTimesResult, type CalendarEntry } from '@mas/ui';
 import { useMasApi } from './useMasApi';
 import { ipc, hasIpc } from '@/lib/ipc';
 import {
@@ -34,6 +34,97 @@ export default function SchedulerPage(): React.ReactElement {
   const [imageUrl, setImageUrl] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [bestTimes, setBestTimes] = useState<BestTimesResult | null>(null);
+  const [calendarEntries, setCalendarEntries] = useState<CalendarEntry[]>([]);
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
+  const [recycling, setRecycling] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const csvInputRef = useRef<HTMLInputElement>(null);
+
+  const loadInsights = useCallback(async () => {
+    if (!api) return;
+    try {
+      const [times, cal] = await Promise.all([api.getBestTimes(), api.getCalendar()]);
+      setBestTimes(times);
+      setCalendarEntries(cal.entries);
+    } catch {
+      /* insights are additive — never block the composer */
+    }
+  }, [api]);
+
+  useEffect(() => { void loadInsights(); }, [loadInsights]);
+
+  /** Fill the datetime-local input from an ISO timestamp (local time). */
+  const useSlot = (iso: string) => {
+    const d = new Date(iso);
+    const pad = (n: number): string => String(n).padStart(2, '0');
+    setScheduledAt(
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`,
+    );
+  };
+
+  const recycleTop = async () => {
+    if (!api) return;
+    setRecycling(true);
+    try {
+      const outcome = await api.recycleTopPosts({ count: 3, spacingHours: 24 });
+      if (outcome.requeued.length === 0) {
+        toast.info('Nothing to recycle yet — publish some posts and capture analytics first.');
+      } else {
+        toast.success(`Re-queued ${outcome.requeued.length} top post${outcome.requeued.length === 1 ? '' : 's'}`);
+        void loadInsights();
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Recycle failed');
+    } finally {
+      setRecycling(false);
+    }
+  };
+
+  /** Bulk CSV import: header row `datetime,body,hashtags` (hashtags optional). */
+  const importCsv = async (file: File) => {
+    if (!api) return;
+    if (selectedAccountIds.length === 0) {
+      toast.error('Select target accounts first — CSV rows are scheduled to them.');
+      return;
+    }
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter((l) => l.trim());
+      const startIdx = /^date/i.test(lines[0] ?? '') ? 1 : 0;
+      let ok = 0;
+      let failed = 0;
+      for (const line of lines.slice(startIdx)) {
+        // naive CSV split honoring simple quoted fields
+        const cols = line.match(/("([^"]*)"|[^,]+)(?=,|$)/g)?.map((c) => c.replace(/^"|"$/g, '').trim()) ?? [];
+        const [dt, bodyCol, tagsCol] = cols;
+        const runAt = new Date(dt ?? '');
+        if (!bodyCol || Number.isNaN(runAt.getTime()) || runAt <= new Date()) { failed += 1; continue; }
+        try {
+          await api.publish({
+            accountIds: selectedAccountIds,
+            pubType: PubType.IMAGE_TEXT,
+            body: bodyCol,
+            hashtags: (tagsCol ?? '').split(/\s+/).filter(Boolean),
+            mediaRefs: [],
+            runAt: runAt.toISOString(),
+          });
+          ok += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      toast[failed ? 'warning' : 'success'](`CSV import: ${ok} scheduled${failed ? `, ${failed} skipped` : ''}`);
+      void loadInsights();
+    } finally {
+      setImporting(false);
+      if (csvInputRef.current) csvInputRef.current.value = '';
+    }
+  };
 
   const loadAccounts = async () => {
     if (!hasIpc()) return;
@@ -219,6 +310,34 @@ export default function SchedulerPage(): React.ReactElement {
               value={scheduledAt}
               onChange={(e) => setScheduledAt(e.target.value)}
             />
+            {bestTimes && bestTimes.slots.length > 0 && (
+              <div className="pt-1">
+                <p className="text-xs text-ink-muted mb-1.5 flex items-center gap-1">
+                  <Zap size={11} className="text-accent" />
+                  Best times{' '}
+                  {bestTimes.basedOn === 'history'
+                    ? `(from your ${bestTimes.sampleSize} tracked posts)`
+                    : '(engagement-peak defaults — capture analytics to personalize)'}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {bestTimes.slots.slice(0, 4).map((slot) => (
+                    <button
+                      key={`${slot.dayOfWeek}-${slot.hour}`}
+                      type="button"
+                      onClick={() => useSlot(slot.nextOccurrence)}
+                      className="rounded-full border border-border px-2.5 py-0.5 text-xs text-ink-muted hover:border-accent/40 hover:text-accent transition-colors"
+                      title={
+                        slot.sampleSize > 0
+                          ? `avg ${slot.avgEngagements} engagements over ${slot.sampleSize} posts`
+                          : 'suggested default'
+                      }
+                    >
+                      {slot.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <Button
@@ -230,6 +349,126 @@ export default function SchedulerPage(): React.ReactElement {
             <Send size={15} />
             Schedule Post
           </Button>
+        </CardContent>
+      </Card>
+
+      {/* Queue tools: evergreen recycling + bulk CSV import */}
+      <Card>
+        <CardContent className="pt-4 flex flex-wrap items-center gap-2">
+          <Button variant="outline" onClick={recycleTop} loading={recycling} disabled={!api}>
+            <Recycle size={14} />
+            Recycle top posts
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => csvInputRef.current?.click()}
+            loading={importing}
+            disabled={!api}
+          >
+            <Upload size={14} />
+            Import CSV
+          </Button>
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => e.target.files?.[0] && void importCsv(e.target.files[0])}
+          />
+          <p className="text-xs text-ink-subtle basis-full">
+            Recycle re-queues your highest-engagement posts at upcoming best-time slots. CSV columns:{' '}
+            <code>datetime, body, hashtags</code> — rows schedule to the accounts selected above.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Content calendar */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              <Calendar size={14} className="text-accent" />
+              {calendarMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+            </span>
+            <span className="flex items-center gap-1">
+              <button
+                onClick={() => setCalendarMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
+                className="p-1 text-ink-muted hover:text-ink-base transition-colors"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <button
+                onClick={() => setCalendarMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
+                className="p-1 text-ink-muted hover:text-ink-base transition-colors"
+              >
+                <ChevronRight size={14} />
+              </button>
+              <button
+                onClick={() => void loadInsights()}
+                className="p-1 text-ink-muted hover:text-ink-base transition-colors"
+                title="Refresh"
+              >
+                <RefreshCw size={13} />
+              </button>
+            </span>
+          </CardTitle>
+          <CardDescription>Queued posts across all accounts.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-7 gap-1 text-center">
+            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+              <div key={i} className="text-[10px] text-ink-subtle font-medium pb-1">{d}</div>
+            ))}
+            {(() => {
+              const first = calendarMonth;
+              const daysInMonth = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+              const lead = first.getDay();
+              const today = new Date();
+              const cells: React.ReactNode[] = [];
+              for (let i = 0; i < lead; i++) cells.push(<div key={`lead-${i}`} />);
+              for (let day = 1; day <= daysInMonth; day++) {
+                const dayEntries = calendarEntries.filter((e) => {
+                  const d = new Date(e.runAt);
+                  return (
+                    d.getFullYear() === first.getFullYear() &&
+                    d.getMonth() === first.getMonth() &&
+                    d.getDate() === day
+                  );
+                });
+                const isToday =
+                  today.getFullYear() === first.getFullYear() &&
+                  today.getMonth() === first.getMonth() &&
+                  today.getDate() === day;
+                cells.push(
+                  <div
+                    key={day}
+                    title={dayEntries
+                      .map((e) => `${new Date(e.runAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ${e.platform}: ${e.body || '(no preview)'}`)
+                      .join('\n')}
+                    className={`min-h-12 rounded-md border p-1 text-left ${
+                      isToday ? 'border-accent/50 bg-accent/5' : 'border-border/50'
+                    }`}
+                  >
+                    <span className={`text-[10px] ${isToday ? 'text-accent font-semibold' : 'text-ink-subtle'}`}>{day}</span>
+                    {dayEntries.length > 0 && (
+                      <div className="mt-0.5 flex flex-wrap gap-0.5">
+                        {dayEntries.slice(0, 3).map((e) => (
+                          <span key={e.id} className="block w-1.5 h-1.5 rounded-full bg-accent" />
+                        ))}
+                        {dayEntries.length > 3 && (
+                          <span className="text-[9px] text-ink-muted leading-none">+{dayEntries.length - 3}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>,
+                );
+              }
+              return cells;
+            })()}
+          </div>
+          {calendarEntries.length === 0 && (
+            <p className="text-center text-xs text-ink-subtle mt-3">No scheduled posts yet.</p>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -60,7 +60,13 @@ export default function EngagementPage(): React.ReactElement {
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-ink-strong">Engagement queue</h2>
+        <div>
+          <h2 className="text-lg font-semibold text-ink-strong">Inbox</h2>
+          <p className="text-xs text-ink-muted mt-0.5">
+            Comments with AI-drafted replies — edit, approve, or dismiss. Platform DMs land here
+            once the platform OAuth apps grant messaging scopes.
+          </p>
+        </div>
         <Button variant="secondary" size="sm" onClick={refresh} disabled={!api}>
           <RefreshCw size={14} />
           Refresh
