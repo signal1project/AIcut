@@ -1,7 +1,21 @@
 import React, { useState } from 'react';
-import { Plus, Film, Music, Loader2, Type, Sparkles, UploadCloud, Wand2, Captions, Mic, Eraser, Scissors } from 'lucide-react';
+import {
+  Plus,
+  Film,
+  Music,
+  Loader2,
+  Type,
+  Sparkles,
+  UploadCloud,
+  Wand2,
+  Captions,
+  Mic,
+  Eraser,
+  Scissors,
+} from 'lucide-react';
 import { useEditorStore, type MediaItem } from '@/store/editorStore';
 import { ipc } from '@/lib/ipc';
+import { toMediaUrl } from '@/lib/media';
 import { v4 as uuidv4 } from 'uuid';
 import { useMasApi } from '@/views/mas/useMasApi';
 
@@ -26,8 +40,14 @@ interface Props {
 }
 
 const MediaPanel: React.FC<Props> = ({ section }) => {
-  const { mediaLibrary, addMediaItem, addClipToTrack, tracks, addTrack, playhead } =
-    useEditorStore();
+  const {
+    mediaLibrary,
+    addMediaItem,
+    addClipToTrack,
+    tracks,
+    addTrack,
+    playhead,
+  } = useEditorStore();
   const [importing, setImporting] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [captionsBusy, setCaptionsBusy] = useState(false);
@@ -52,7 +72,9 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
       for (const clip of result.clips) {
         addMediaItem({
           id: uuidv4(),
-          name: clip.hook ? `Clip: ${clip.hook.slice(0, 40)}` : `Clip ${clip.start}s`,
+          name: clip.hook
+            ? `Clip: ${clip.hook.slice(0, 40)}`
+            : `Clip ${clip.start}s`,
           src: clip.path,
           duration: clip.durationSeconds,
           type: 'video',
@@ -90,6 +112,7 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
     }, 0);
     addClipToTrack(targetTrack.id, {
       src: item.src,
+      previewSrc: item.previewSrc,
       name: item.name,
       duration: item.duration,
       startTime: lastEnd,
@@ -101,8 +124,9 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
   };
 
   const addCaption = (text: string) => {
-    const captionTrack =
-      tracks.find((t) => t.type === 'caption') ?? { id: addTrack('caption') };
+    const captionTrack = tracks.find((t) => t.type === 'caption') ?? {
+      id: addTrack('caption'),
+    };
     addClipToTrack(captionTrack.id, {
       src: '',
       name: 'Caption',
@@ -120,21 +144,37 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
     setCaptionsBusy(true);
     const allClips = tracks.flatMap((t) =>
       t.clips.map((c) => ({
-        id: c.id, src: c.src, startTime: c.startTime, trimStart: c.trimStart,
-        trimEnd: c.trimEnd, duration: c.duration, type: c.type,
+        id: c.id,
+        src: c.src,
+        startTime: c.startTime,
+        trimStart: c.trimStart,
+        trimEnd: c.trimEnd,
+        duration: c.duration,
+        type: c.type,
       })),
     );
-    const result = (await ipc.invoke('aicuts:generate-captions', transcript, allClips)) as
+    const result = (await ipc.invoke(
+      'aicuts:generate-captions',
+      transcript,
+      allClips,
+    )) as
       | Array<{ startTime: number; endTime: number; text: string }>
       | undefined;
     setCaptionsBusy(false);
     if (!result || result.length === 0) return;
-    const captionTrack = tracks.find((t) => t.type === 'caption') ?? { id: addTrack('caption') };
+    const captionTrack = tracks.find((t) => t.type === 'caption') ?? {
+      id: addTrack('caption'),
+    };
     for (const seg of result) {
       addClipToTrack(captionTrack.id, {
-        src: '', name: 'Caption', duration: seg.endTime - seg.startTime,
-        startTime: seg.startTime, trimStart: 0, trimEnd: 0,
-        type: 'caption', captionText: seg.text,
+        src: '',
+        name: 'Caption',
+        duration: seg.endTime - seg.startTime,
+        startTime: seg.startTime,
+        trimStart: 0,
+        trimEnd: 0,
+        type: 'caption',
+        captionText: seg.text,
       });
     }
     setTranscript('');
@@ -144,16 +184,37 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
     if (!autoEditPrompt.trim()) return;
     setAutoEditBusy(true);
     const allClips = tracks.flatMap((t) =>
-      t.clips.map((c) => ({ id: c.id, name: c.name, duration: c.duration, src: c.src })),
+      t.clips.map((c) => ({
+        id: c.id,
+        name: c.name,
+        duration: c.duration,
+        src: c.src,
+      })),
     );
-    const result = (await ipc.invoke('aicuts:auto-edit', { clips: allClips, prompt: autoEditPrompt })) as
-      | { decisions?: Array<{ clipId: string; trimStart: number; trimEnd: number; startTime: number }>; summary?: string; error?: string }
+    const result = (await ipc.invoke('aicuts:auto-edit', {
+      clips: allClips,
+      prompt: autoEditPrompt,
+    })) as
+      | {
+          decisions?: Array<{
+            clipId: string;
+            trimStart: number;
+            trimEnd: number;
+            startTime: number;
+          }>;
+          summary?: string;
+          error?: string;
+        }
       | undefined;
     setAutoEditBusy(false);
     if (result?.decisions) {
       const { updateClip } = useEditorStore.getState();
       for (const d of result.decisions) {
-        updateClip(d.clipId, { trimStart: d.trimStart, trimEnd: d.trimEnd, startTime: d.startTime });
+        updateClip(d.clipId, {
+          trimStart: d.trimStart,
+          trimEnd: d.trimEnd,
+          startTime: d.startTime,
+        });
       }
       setAutoEditPrompt('');
     }
@@ -218,9 +279,13 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
                     <div className="relative aspect-video bg-[#0c0c0f] flex items-center justify-center overflow-hidden">
                       {item.thumbnail ? (
                         <img
-                          src={`file://${item.thumbnail}`}
+                          src={toMediaUrl(item.thumbnail)}
                           className="w-full h-full object-cover"
                           alt=""
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display =
+                              'none';
+                          }}
                         />
                       ) : item.type === 'audio' ? (
                         <Music size={20} className="text-[#5a5a66]" />
@@ -230,6 +295,11 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
                       <span className="absolute bottom-1 right-1 text-[9px] font-mono text-white/90 bg-black/60 px-1 rounded">
                         {fmt(item.duration)}
                       </span>
+                      {item.missing && (
+                        <span className="absolute top-1 left-1 text-[9px] font-medium bg-red-600/85 text-white px-1 rounded">
+                          file missing
+                        </span>
+                      )}
                       <div className="absolute inset-0 flex items-center justify-center bg-[#4d7cff]/0 group-hover:bg-[#4d7cff]/15 transition-colors">
                         <Plus
                           size={22}
@@ -275,30 +345,51 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
         {/* Effects section */}
         {section === 'effects' && (
           <div className="space-y-3">
-            <p className="text-[10px] text-[#5a5a66] uppercase tracking-wider px-0.5">Transitions</p>
+            <p className="text-[10px] text-[#5a5a66] uppercase tracking-wider px-0.5">
+              Transitions
+            </p>
             <p className="text-[10px] text-[#71717f] leading-relaxed">
-              Select a clip then use the <span className="text-[#c8c8d2]">Properties</span> panel on the right to set Fade In / Fade Out duration for that clip.
+              Select a clip then use the{' '}
+              <span className="text-[#c8c8d2]">Properties</span> panel on the
+              right to set Fade In / Fade Out duration for that clip.
             </p>
             <div className="mt-3 p-3 rounded-lg bg-[#1d1d22] border border-[#26262d]">
               <div className="flex items-center gap-2 mb-1.5">
                 <Sparkles size={13} className="text-[#4d7cff]" />
-                <span className="text-[11px] font-medium text-ink-strong">Per-clip fades</span>
+                <span className="text-[11px] font-medium text-ink-strong">
+                  Per-clip fades
+                </span>
               </div>
-              <p className="text-[10px] text-[#71717f]">Fade in / fade out are burned into the export via FFmpeg — no quality loss.</p>
+              <p className="text-[10px] text-[#71717f]">
+                Fade in / fade out are burned into the export via FFmpeg — no
+                quality loss.
+              </p>
             </div>
             <div className="p-3 rounded-lg bg-[#1d1d22] border border-[#26262d] opacity-50">
               <div className="flex items-center justify-between mb-0.5">
-                <span className="text-[11px] font-medium text-ink-strong">Clip transitions</span>
-                <span className="text-[9px] bg-[#26262d] text-[#71717f] px-1.5 py-0.5 rounded font-medium">Soon</span>
+                <span className="text-[11px] font-medium text-ink-strong">
+                  Clip transitions
+                </span>
+                <span className="text-[9px] bg-[#26262d] text-[#71717f] px-1.5 py-0.5 rounded font-medium">
+                  Soon
+                </span>
               </div>
-              <p className="text-[10px] text-[#71717f]">Cross-dissolve, wipe, slide between clips</p>
+              <p className="text-[10px] text-[#71717f]">
+                Cross-dissolve, wipe, slide between clips
+              </p>
             </div>
             <div className="p-3 rounded-lg bg-[#1d1d22] border border-[#26262d] opacity-50">
               <div className="flex items-center justify-between mb-0.5">
-                <span className="text-[11px] font-medium text-ink-strong">Color grading</span>
-                <span className="text-[9px] bg-[#26262d] text-[#71717f] px-1.5 py-0.5 rounded font-medium">Soon</span>
+                <span className="text-[11px] font-medium text-ink-strong">
+                  Color grading
+                </span>
+                <span className="text-[9px] bg-[#26262d] text-[#71717f] px-1.5 py-0.5 rounded font-medium">
+                  Soon
+                </span>
               </div>
-              <p className="text-[10px] text-[#71717f]">Brightness, contrast, saturation, LUTs</p>
+              <p className="text-[10px] text-[#71717f]">
+                Brightness, contrast, saturation, LUTs
+              </p>
             </div>
           </div>
         )}
@@ -310,9 +401,14 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
             <div className="p-3 rounded-xl bg-[#1d1d22] border border-[#26262d]">
               <div className="flex items-center gap-2 mb-2">
                 <Captions size={14} className="text-[#4d7cff]" />
-                <span className="text-[12px] font-semibold text-ink-strong">Auto-Captions</span>
+                <span className="text-[12px] font-semibold text-ink-strong">
+                  Auto-Captions
+                </span>
               </div>
-              <p className="text-[10px] text-[#71717f] mb-2.5">Paste your transcript and Claude will place caption clips on the timeline.</p>
+              <p className="text-[10px] text-[#71717f] mb-2.5">
+                Paste your transcript and Claude will place caption clips on the
+                timeline.
+              </p>
               <textarea
                 value={transcript}
                 onChange={(e) => setTranscript(e.target.value)}
@@ -324,7 +420,14 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
                 disabled={captionsBusy || !transcript.trim()}
                 className="mt-2 w-full flex items-center justify-center gap-1.5 bg-[#4d7cff] hover:bg-[#3d6cf0] disabled:opacity-50 text-white text-[11px] font-medium rounded-lg py-2 transition-colors"
               >
-                {captionsBusy ? <><Loader2 size={11} className="animate-spin" />Generating…</> : 'Generate Captions'}
+                {captionsBusy ? (
+                  <>
+                    <Loader2 size={11} className="animate-spin" />
+                    Generating…
+                  </>
+                ) : (
+                  'Generate Captions'
+                )}
               </button>
             </div>
 
@@ -332,9 +435,14 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
             <div className="p-3 rounded-xl bg-[#1d1d22] border border-[#26262d]">
               <div className="flex items-center gap-2 mb-2">
                 <Wand2 size={14} className="text-[#8aa6ff]" />
-                <span className="text-[12px] font-semibold text-ink-strong">AI Auto-Edit</span>
+                <span className="text-[12px] font-semibold text-ink-strong">
+                  AI Auto-Edit
+                </span>
               </div>
-              <p className="text-[10px] text-[#71717f] mb-2.5">Describe your edit — Claude Sonnet applies trim decisions across all clips.</p>
+              <p className="text-[10px] text-[#71717f] mb-2.5">
+                Describe your edit — Claude Sonnet applies trim decisions across
+                all clips.
+              </p>
               <textarea
                 value={autoEditPrompt}
                 onChange={(e) => setAutoEditPrompt(e.target.value)}
@@ -346,7 +454,14 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
                 disabled={autoEditBusy || !autoEditPrompt.trim()}
                 className="mt-2 w-full flex items-center justify-center gap-1.5 bg-[#1d2540] hover:bg-[#243056] disabled:opacity-50 text-[#8aa6ff] text-[11px] font-medium rounded-lg py-2 transition-colors"
               >
-                {autoEditBusy ? <><Loader2 size={11} className="animate-spin" />Editing…</> : 'Apply AI Edit'}
+                {autoEditBusy ? (
+                  <>
+                    <Loader2 size={11} className="animate-spin" />
+                    Editing…
+                  </>
+                ) : (
+                  'Apply AI Edit'
+                )}
               </button>
             </div>
 
@@ -354,11 +469,15 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
             <div className="p-3 rounded-xl bg-[#1d1d22] border border-[#26262d]">
               <div className="flex items-center gap-2 mb-2">
                 <Scissors size={14} className="text-[#34d399]" />
-                <span className="text-[12px] font-semibold text-ink-strong">Auto-Clip</span>
+                <span className="text-[12px] font-semibold text-ink-strong">
+                  Auto-Clip
+                </span>
               </div>
               <p className="text-[10px] text-[#71717f] mb-2.5">
-                Finds the best moments in your first library video and cuts vertical short clips with
-                burned captions. Paste an SRT/VTT transcript, or leave empty to use Whisper (OpenAI key in Settings).
+                Finds the best moments in your first library video and cuts
+                vertical short clips with burned captions. Paste an SRT/VTT
+                transcript, or leave empty to use Whisper (OpenAI key in
+                Settings).
               </p>
               <textarea
                 value={clipSrt}
@@ -368,12 +487,27 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
               />
               <button
                 onClick={handleAutoClip}
-                disabled={clipBusy || !masApi || !mediaLibrary.some((m) => m.type === 'video')}
+                disabled={
+                  clipBusy ||
+                  !masApi ||
+                  !mediaLibrary.some((m) => m.type === 'video')
+                }
                 className="mt-2 w-full flex items-center justify-center gap-1.5 bg-[#12352a] hover:bg-[#174534] disabled:opacity-50 text-[#34d399] text-[11px] font-medium rounded-lg py-2 transition-colors"
               >
-                {clipBusy ? <><Loader2 size={11} className="animate-spin" />Clipping…</> : 'Find & Cut Clips'}
+                {clipBusy ? (
+                  <>
+                    <Loader2 size={11} className="animate-spin" />
+                    Clipping…
+                  </>
+                ) : (
+                  'Find & Cut Clips'
+                )}
               </button>
-              {clipStatus && <p className="text-[10px] text-[#a1a1ab] mt-1.5">{clipStatus}</p>}
+              {clipStatus && (
+                <p className="text-[10px] text-[#a1a1ab] mt-1.5">
+                  {clipStatus}
+                </p>
+              )}
             </div>
 
             {/* Remove Background stub */}
@@ -381,11 +515,17 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <Eraser size={14} className="text-[#e0a93a]" />
-                  <span className="text-[12px] font-semibold text-ink-strong">Remove Background</span>
+                  <span className="text-[12px] font-semibold text-ink-strong">
+                    Remove Background
+                  </span>
                 </div>
-                <span className="text-[9px] bg-[#26262d] text-[#71717f] px-1.5 py-0.5 rounded font-medium">Soon</span>
+                <span className="text-[9px] bg-[#26262d] text-[#71717f] px-1.5 py-0.5 rounded font-medium">
+                  Soon
+                </span>
               </div>
-              <p className="text-[10px] text-[#71717f]">AI-powered background removal for video clips</p>
+              <p className="text-[10px] text-[#71717f]">
+                AI-powered background removal for video clips
+              </p>
             </div>
 
             {/* Voice Studio stub */}
@@ -393,11 +533,17 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <Mic size={14} className="text-[#22c55e]" />
-                  <span className="text-[12px] font-semibold text-ink-strong">Voice Studio</span>
+                  <span className="text-[12px] font-semibold text-ink-strong">
+                    Voice Studio
+                  </span>
                 </div>
-                <span className="text-[9px] bg-[#26262d] text-[#71717f] px-1.5 py-0.5 rounded font-medium">Soon</span>
+                <span className="text-[9px] bg-[#26262d] text-[#71717f] px-1.5 py-0.5 rounded font-medium">
+                  Soon
+                </span>
               </div>
-              <p className="text-[10px] text-[#71717f]">Text-to-speech voiceover generation (ElevenLabs)</p>
+              <p className="text-[10px] text-[#71717f]">
+                Text-to-speech voiceover generation (ElevenLabs)
+              </p>
             </div>
           </div>
         )}

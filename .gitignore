@@ -48,3 +48,4 @@ public/bin/*
 # MAS e2e bundle artifact
 electron/main/mas/__e2e__/_bundle.cjs
 dist-ext
+electron/main/aicuts/__e2e__/_media-bundle.cjs

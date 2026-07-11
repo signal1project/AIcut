@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Film, Music, Type, Sparkles, Wand2, Link2 } from 'lucide-react';
 import { useEditorStore } from '@/store/editorStore';
+import { useAutosave, saveCurrentProject } from '@/lib/projectPersistence';
 import Toolbar from './Toolbar';
 import MediaPanel, { type PanelSection } from './MediaPanel';
 import PreviewPlayer from './PreviewPlayer';
@@ -17,26 +18,43 @@ const TOOLS: { id: PanelSection; label: string; icon: React.ElementType }[] = [
 ];
 
 const EditorPage: React.FC = () => {
-  const { isPlaying, playhead, duration, setPlayhead, setIsPlaying } = useEditorStore();
+  const { isPlaying, playhead, duration, setPlayhead, setIsPlaying } =
+    useEditorStore();
   const animFrameRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number | null>(null);
   const [section, setSection] = useState<PanelSection>('media');
   const [showAccounts, setShowAccounts] = useState(false);
 
+  // Autosave project as it changes; Ctrl+S forces an immediate save.
+  useAutosave();
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        void saveCurrentProject();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   // Playback engine
-  const tick = useCallback((now: number) => {
-    if (lastTimeRef.current == null) lastTimeRef.current = now;
-    const delta = (now - lastTimeRef.current) / 1000;
-    lastTimeRef.current = now;
-    const next = playhead + delta;
-    if (duration > 0 && next >= duration) {
-      setPlayhead(duration);
-      setIsPlaying(false);
-      return;
-    }
-    setPlayhead(next);
-    animFrameRef.current = requestAnimationFrame(tick);
-  }, [playhead, duration, setPlayhead, setIsPlaying]);
+  const tick = useCallback(
+    (now: number) => {
+      if (lastTimeRef.current == null) lastTimeRef.current = now;
+      const delta = (now - lastTimeRef.current) / 1000;
+      lastTimeRef.current = now;
+      const next = playhead + delta;
+      if (duration > 0 && next >= duration) {
+        setPlayhead(duration);
+        setIsPlaying(false);
+        return;
+      }
+      setPlayhead(next);
+      animFrameRef.current = requestAnimationFrame(tick);
+    },
+    [playhead, duration, setPlayhead, setIsPlaying],
+  );
 
   useEffect(() => {
     if (isPlaying) {
@@ -46,7 +64,9 @@ const EditorPage: React.FC = () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
       lastTimeRef.current = null;
     }
-    return () => { if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current); };
+    return () => {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    };
   }, [isPlaying, tick]);
 
   return (
@@ -72,7 +92,9 @@ const EditorPage: React.FC = () => {
                 title={label}
               >
                 <Icon size={18} strokeWidth={active ? 2.2 : 1.8} />
-                <span className="text-[9px] font-medium tracking-tight">{label}</span>
+                <span className="text-[9px] font-medium tracking-tight">
+                  {label}
+                </span>
               </button>
             );
           })}
@@ -83,7 +105,9 @@ const EditorPage: React.FC = () => {
             title="Connect social accounts"
           >
             <Link2 size={18} strokeWidth={1.8} />
-            <span className="text-[9px] font-medium tracking-tight">Accounts</span>
+            <span className="text-[9px] font-medium tracking-tight">
+              Accounts
+            </span>
           </button>
         </nav>
 
@@ -108,7 +132,9 @@ const EditorPage: React.FC = () => {
         <Timeline />
       </div>
 
-      {showAccounts && <ConnectAccounts onClose={() => setShowAccounts(false)} />}
+      {showAccounts && (
+        <ConnectAccounts onClose={() => setShowAccounts(false)} />
+      )}
     </div>
   );
 };

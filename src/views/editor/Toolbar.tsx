@@ -1,24 +1,51 @@
 import React, { useState } from 'react';
 import {
-  Play, Pause, Square, Scissors, Trash2, Undo2, Redo2,
-  Download, Wand2, ZoomIn, ZoomOut, Type, Loader2,
+  Play,
+  Pause,
+  Square,
+  Scissors,
+  Trash2,
+  Undo2,
+  Redo2,
+  Download,
+  Wand2,
+  ZoomIn,
+  ZoomOut,
+  Type,
+  Loader2,
+  Save,
+  Check,
 } from 'lucide-react';
 import { useEditorStore } from '@/store/editorStore';
 import { ipc } from '@/lib/ipc';
+import { saveCurrentProject } from '@/lib/projectPersistence';
 
 const RESOLUTIONS = ['1080p', '4k', '720p'] as const;
 
 const Toolbar: React.FC = () => {
   const {
-    isPlaying, playhead, duration, setIsPlaying, setPlayhead,
-    selectedClipId, removeClip, splitClip, zoom, setZoom,
-    exportProgress, setExportProgress, tracks,
+    isPlaying,
+    playhead,
+    duration,
+    setIsPlaying,
+    setPlayhead,
+    selectedClipId,
+    removeClip,
+    splitClip,
+    zoom,
+    setZoom,
+    exportProgress,
+    setExportProgress,
+    tracks,
+    saveState,
   } = useEditorStore();
 
   const [autoEditPrompt, setAutoEditPrompt] = useState('');
   const [showAutoEdit, setShowAutoEdit] = useState(false);
   const [showExport, setShowExport] = useState(false);
-  const [resolution, setResolution] = useState<'1080p' | '4k' | '720p'>('1080p');
+  const [resolution, setResolution] = useState<'1080p' | '4k' | '720p'>(
+    '1080p',
+  );
   const [autoEditing, setAutoEditing] = useState(false);
 
   const togglePlay = () => {
@@ -44,26 +71,44 @@ const Toolbar: React.FC = () => {
 
   const addCaption = () => {
     const { addTrack, addClipToTrack, tracks: t } = useEditorStore.getState();
-    const captionTrack = t.find((tr) => tr.type === 'caption') ?? { id: addTrack('caption') };
+    const captionTrack = t.find((tr) => tr.type === 'caption') ?? {
+      id: addTrack('caption'),
+    };
     addClipToTrack(captionTrack.id, {
-      src: '', name: 'Caption', duration: 3, startTime: playhead,
-      trimStart: 0, trimEnd: 0, type: 'caption', captionText: 'Caption text',
+      src: '',
+      name: 'Caption',
+      duration: 3,
+      startTime: playhead,
+      trimStart: 0,
+      trimEnd: 0,
+      type: 'caption',
+      captionText: 'Caption text',
     });
   };
 
   const handleExport = async () => {
     const allClips = tracks.flatMap((t) =>
       t.clips.map((c) => ({
-        id: c.id, src: c.src, startTime: c.startTime, trimStart: c.trimStart,
-        trimEnd: c.trimEnd, duration: c.duration, type: c.type,
-        captionText: c.captionText, volume: c.volume,
+        id: c.id,
+        src: c.src,
+        startTime: c.startTime,
+        trimStart: c.trimStart,
+        trimEnd: c.trimEnd,
+        duration: c.duration,
+        type: c.type,
+        captionText: c.captionText,
+        volume: c.volume,
       })),
     );
     if (allClips.length === 0) return;
     setExportProgress(0);
     const result = (await ipc.invoke('aicuts:export', allClips, {
-      resolution, format: 'mp4', fps: 30,
-    })) as { success?: boolean; outputPath?: string; error?: string } | undefined;
+      resolution,
+      format: 'mp4',
+      fps: 30,
+    })) as
+      | { success?: boolean; outputPath?: string; error?: string }
+      | undefined;
     setExportProgress(null);
     setShowExport(false);
     if (result?.success) {
@@ -77,21 +122,37 @@ const Toolbar: React.FC = () => {
     if (!autoEditPrompt.trim()) return;
     setAutoEditing(true);
     const allClips = tracks.flatMap((t) =>
-      t.clips.map((c) => ({ id: c.id, name: c.name, duration: c.duration, src: c.src })),
+      t.clips.map((c) => ({
+        id: c.id,
+        name: c.name,
+        duration: c.duration,
+        src: c.src,
+      })),
     );
     const result = (await ipc.invoke('aicuts:auto-edit', {
       clips: allClips,
       prompt: autoEditPrompt,
-    })) as {
-      decisions?: { clipId: string; trimStart: number; trimEnd: number; startTime: number }[];
-      summary?: string;
-      error?: string;
-    } | undefined;
+    })) as
+      | {
+          decisions?: {
+            clipId: string;
+            trimStart: number;
+            trimEnd: number;
+            startTime: number;
+          }[];
+          summary?: string;
+          error?: string;
+        }
+      | undefined;
     setAutoEditing(false);
     if (result?.decisions) {
       const { updateClip } = useEditorStore.getState();
       for (const d of result.decisions) {
-        updateClip(d.clipId, { trimStart: d.trimStart, trimEnd: d.trimEnd, startTime: d.startTime });
+        updateClip(d.clipId, {
+          trimStart: d.trimStart,
+          trimEnd: d.trimEnd,
+          startTime: d.startTime,
+        });
       }
       alert(`Auto-edit complete: ${result.summary}`);
     } else if (result?.error) {
@@ -131,10 +192,20 @@ const Toolbar: React.FC = () => {
       <div className="tb-sep" />
 
       {/* Edit ops */}
-      <button onClick={handleSplit} disabled={!selectedClipId} className="tb-btn" title="Split at playhead (S)">
+      <button
+        onClick={handleSplit}
+        disabled={!selectedClipId}
+        className="tb-btn"
+        title="Split at playhead (S)"
+      >
         <Scissors size={14} />
       </button>
-      <button onClick={handleDelete} disabled={!selectedClipId} className="tb-btn tb-btn--danger" title="Delete selected (Del)">
+      <button
+        onClick={handleDelete}
+        disabled={!selectedClipId}
+        className="tb-btn tb-btn--danger"
+        title="Delete selected (Del)"
+      >
         <Trash2 size={14} />
       </button>
       <button onClick={addCaption} className="tb-btn" title="Add text">
@@ -144,15 +215,60 @@ const Toolbar: React.FC = () => {
       <div className="tb-sep" />
 
       {/* Undo/Redo */}
-      <button className="tb-btn" title="Undo (Ctrl+Z)"><Undo2 size={14} /></button>
-      <button className="tb-btn" title="Redo (Ctrl+Y)"><Redo2 size={14} /></button>
+      <button className="tb-btn" title="Undo (Ctrl+Z)">
+        <Undo2 size={14} />
+      </button>
+      <button className="tb-btn" title="Redo (Ctrl+Y)">
+        <Redo2 size={14} />
+      </button>
+
+      <div className="tb-sep" />
+
+      {/* Save */}
+      <button
+        onClick={() => void saveCurrentProject()}
+        disabled={saveState === 'saving'}
+        className="flex items-center gap-1.5 px-2.5 h-8 rounded-md bg-[#26262d] hover:bg-[#303039] text-[#c8c8d2] text-[11px] font-medium transition-colors disabled:opacity-60"
+        title="Save project (Ctrl+S) — autosaves as you edit"
+      >
+        {saveState === 'saving' ? (
+          <>
+            <Loader2 size={12} className="animate-spin" />
+            Saving…
+          </>
+        ) : saveState === 'saved' || saveState === 'clean' ? (
+          <>
+            <Check size={12} className="text-[#22c55e]" />
+            Saved
+          </>
+        ) : (
+          <>
+            <Save size={12} />
+            Save
+          </>
+        )}
+      </button>
 
       <div className="flex-1" />
 
       {/* Zoom */}
-      <button onClick={() => setZoom(zoom - 10)} className="tb-btn" title="Zoom out"><ZoomOut size={14} /></button>
-      <span className="text-[10px] text-[#71717f] min-w-[42px] text-center tabular-nums">{zoom} px/s</span>
-      <button onClick={() => setZoom(zoom + 10)} className="tb-btn" title="Zoom in"><ZoomIn size={14} /></button>
+      <button
+        onClick={() => setZoom(zoom - 10)}
+        className="tb-btn"
+        title="Zoom out"
+      >
+        <ZoomOut size={14} />
+      </button>
+      <span className="text-[10px] text-[#71717f] min-w-[42px] text-center tabular-nums">
+        {zoom} px/s
+      </span>
+      <button
+        onClick={() => setZoom(zoom + 10)}
+        className="tb-btn"
+        title="Zoom in"
+      >
+        <ZoomIn size={14} />
+      </button>
 
       <div className="tb-sep" />
 
@@ -181,7 +297,13 @@ const Toolbar: React.FC = () => {
               disabled={autoEditing || !autoEditPrompt.trim()}
               className="mt-2.5 w-full flex items-center justify-center gap-2 bg-[#4d7cff] hover:bg-[#3d6cf0] disabled:opacity-50 text-white text-xs font-medium rounded-lg py-2 transition-colors"
             >
-              {autoEditing ? <><Loader2 size={12} className="animate-spin" /> Editing…</> : 'Apply AI Edit'}
+              {autoEditing ? (
+                <>
+                  <Loader2 size={12} className="animate-spin" /> Editing…
+                </>
+              ) : (
+                'Apply AI Edit'
+              )}
             </button>
           </div>
         )}
@@ -193,27 +315,42 @@ const Toolbar: React.FC = () => {
           onClick={() => setShowExport((v) => !v)}
           className="flex items-center gap-1.5 px-3.5 h-8 rounded-md bg-[#22c55e] hover:bg-[#1faa52] text-[#06210f] text-xs font-semibold transition-colors shadow-sm"
         >
-          {exportProgress != null
-            ? <><Loader2 size={13} className="animate-spin" />{exportProgress}%</>
-            : <><Download size={13} strokeWidth={2.5} />Export</>}
+          {exportProgress != null ? (
+            <>
+              <Loader2 size={13} className="animate-spin" />
+              {exportProgress}%
+            </>
+          ) : (
+            <>
+              <Download size={13} strokeWidth={2.5} />
+              Export
+            </>
+          )}
         </button>
         {showExport && exportProgress == null && (
           <div className="absolute right-0 top-full mt-2 z-50 bg-[#1d1d22] border border-[#303039] rounded-xl shadow-2xl p-3.5 w-52">
-            <p className="text-[10px] text-[#71717f] uppercase tracking-wider mb-2">Resolution</p>
+            <p className="text-[10px] text-[#71717f] uppercase tracking-wider mb-2">
+              Resolution
+            </p>
             <div className="flex gap-1.5 mb-3">
               {RESOLUTIONS.map((r) => (
                 <button
                   key={r}
                   onClick={() => setResolution(r)}
                   className={`flex-1 text-[11px] font-medium px-2 py-1.5 rounded-md transition-colors ${
-                    resolution === r ? 'bg-[#4d7cff] text-white' : 'bg-[#26262d] text-[#9a9aa6] hover:bg-[#303039]'
+                    resolution === r
+                      ? 'bg-[#4d7cff] text-white'
+                      : 'bg-[#26262d] text-[#9a9aa6] hover:bg-[#303039]'
                   }`}
                 >
                   {r}
                 </button>
               ))}
             </div>
-            <button onClick={handleExport} className="w-full bg-[#22c55e] hover:bg-[#1faa52] text-[#06210f] text-xs font-semibold rounded-lg py-2 transition-colors">
+            <button
+              onClick={handleExport}
+              className="w-full bg-[#22c55e] hover:bg-[#1faa52] text-[#06210f] text-xs font-semibold rounded-lg py-2 transition-colors"
+            >
               Export MP4
             </button>
           </div>

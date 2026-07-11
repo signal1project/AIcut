@@ -1,33 +1,55 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Play, Pause, Volume2, VolumeX, Maximize2 } from 'lucide-react';
-import { useEditorStore } from '@/store/editorStore';
+import { useEditorStore, type Clip, type Track } from '@/store/editorStore';
+import { toMediaUrl } from '@/lib/media';
+
+function findActiveClip(
+  tracks: Track[],
+  type: 'video' | 'audio',
+  playhead: number,
+): { clip: Clip; track: Track } | null {
+  for (const track of tracks) {
+    if (track.type !== type) continue;
+    for (const clip of track.clips) {
+      const clipStart = clip.startTime;
+      const clipEnd =
+        clip.startTime + (clip.duration - clip.trimStart - clip.trimEnd);
+      if (playhead >= clipStart && playhead < clipEnd) return { clip, track };
+    }
+  }
+  return null;
+}
 
 const PreviewPlayer: React.FC = () => {
-  const { tracks, playhead, duration, isPlaying, setPlayhead, setIsPlaying } = useEditorStore();
+  const { tracks, playhead, duration, isPlaying, setPlayhead, setIsPlaying } =
+    useEditorStore();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const [muted, setMuted] = useState(false);
   const [currentSrc, setCurrentSrc] = useState<string | null>(null);
 
   // Find the video clip that should be playing at the current playhead
-  const activeClip = (() => {
-    for (const track of tracks) {
-      if (track.type !== 'video') continue;
-      for (const clip of track.clips) {
-        const clipStart = clip.startTime;
-        const clipEnd = clip.startTime + (clip.duration - clip.trimStart - clip.trimEnd);
-        if (playhead >= clipStart && playhead < clipEnd) return clip;
-      }
-    }
-    return null;
-  })();
+  const activeVideo = findActiveClip(tracks, 'video', playhead);
+  const activeClip = activeVideo?.clip ?? null;
+  const videoTrackMuted = !!activeVideo?.track.muted;
+
+  // Active audio-track clip (music/voiceover laid on the audio track)
+  const activeAudio = findActiveClip(tracks, 'audio', playhead);
+  const audioClip =
+    activeAudio && !activeAudio.track.muted ? activeAudio.clip : null;
+  const audioSrc = audioClip
+    ? toMediaUrl(audioClip.previewSrc ?? audioClip.src)
+    : null;
 
   // Active caption at playhead
   const activeCaption = (() => {
     for (const track of tracks) {
       if (track.type !== 'caption') continue;
       for (const clip of track.clips) {
-        const end = clip.startTime + (clip.duration - clip.trimStart - clip.trimEnd);
-        if (playhead >= clip.startTime && playhead < end) return clip.captionText;
+        const end =
+          clip.startTime + (clip.duration - clip.trimStart - clip.trimEnd);
+        if (playhead >= clip.startTime && playhead < end)
+          return clip.captionText;
       }
     }
     return null;
@@ -38,9 +60,8 @@ const PreviewPlayer: React.FC = () => {
       setCurrentSrc(null);
       return;
     }
-    const newSrc = `file://${activeClip.src}`;
+    const newSrc = toMediaUrl(activeClip.previewSrc ?? activeClip.src);
     if (newSrc !== currentSrc) setCurrentSrc(newSrc);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeClip?.id]);
 
   useEffect(() => {
@@ -52,6 +73,16 @@ const PreviewPlayer: React.FC = () => {
     }
   }, [playhead, activeClip, currentSrc]);
 
+  // Keep the audio-track element in sync with the playhead
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !audioClip) return;
+    const clipTime = audioClip.trimStart + (playhead - audioClip.startTime);
+    if (Math.abs(audio.currentTime - clipTime) > 0.15) {
+      audio.currentTime = clipTime;
+    }
+  }, [playhead, audioClip]);
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !currentSrc) return;
@@ -62,11 +93,24 @@ const PreviewPlayer: React.FC = () => {
     }
   }, [isPlaying, currentSrc]);
 
-  const handleScrub = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = (e.clientX - rect.left) / rect.width;
-    setPlayhead(ratio * duration);
-  }, [duration, setPlayhead]);
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !audioSrc) return;
+    if (isPlaying) {
+      audio.play().catch(() => {});
+    } else {
+      audio.pause();
+    }
+  }, [isPlaying, audioSrc]);
+
+  const handleScrub = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const ratio = (e.clientX - rect.left) / rect.width;
+      setPlayhead(ratio * duration);
+    },
+    [duration, setPlayhead],
+  );
 
   const pct = duration > 0 ? (playhead / duration) * 100 : 0;
 
@@ -74,31 +118,47 @@ const PreviewPlayer: React.FC = () => {
     <div className="flex flex-col items-center w-full h-full px-6 pt-5 pb-4 gap-3">
       {/* Video stage */}
       <div className="relative flex-1 w-full flex items-center justify-center min-h-0">
-        <div className="relative max-w-full max-h-full aspect-video bg-black rounded-xl overflow-hidden shadow-2xl ring-1 ring-[#202027] flex items-center justify-center"
-             style={{ width: '100%' }}>
+        <div
+          className="relative max-w-full max-h-full aspect-video bg-black rounded-xl overflow-hidden shadow-2xl ring-1 ring-[#202027] flex items-center justify-center"
+          style={{ width: '100%' }}
+        >
           {currentSrc ? (
             <video
               ref={videoRef}
               src={currentSrc}
-              muted={muted}
+              muted={muted || videoTrackMuted}
               className="max-w-full max-h-full w-full h-full object-contain"
               preload="auto"
-              onEnded={() => setIsPlaying(false)}
             />
           ) : (
             <div className="flex flex-col items-center gap-3 text-[#3f3f4a]">
               <div className="w-16 h-16 rounded-2xl border-2 border-[#2a2a33] flex items-center justify-center">
                 <Play size={26} strokeWidth={1.4} className="translate-x-0.5" />
               </div>
-              <p className="text-xs text-[#5a5a66]">Import media and add it to the timeline</p>
+              <p className="text-xs text-[#5a5a66]">
+                Import media and add it to the timeline
+              </p>
             </div>
+          )}
+
+          {/* Hidden audio element for audio-track clips (music/voiceover) */}
+          {audioSrc && (
+            <audio
+              ref={audioRef}
+              src={audioSrc}
+              muted={muted}
+              preload="auto"
+              className="hidden"
+            />
           )}
 
           {/* Caption overlay */}
           {activeCaption && (
             <div className="absolute inset-x-0 bottom-6 flex justify-center px-6 pointer-events-none">
-              <span className="text-white text-lg font-semibold text-center px-3 py-1 rounded"
-                    style={{ textShadow: '0 2px 6px rgba(0,0,0,0.9)' }}>
+              <span
+                className="text-white text-lg font-semibold text-center px-3 py-1 rounded"
+                style={{ textShadow: '0 2px 6px rgba(0,0,0,0.9)' }}
+              >
                 {activeCaption}
               </span>
             </div>
@@ -112,7 +172,10 @@ const PreviewPlayer: React.FC = () => {
           className="group w-full h-1.5 bg-[#26262d] rounded-full cursor-pointer relative"
           onClick={handleScrub}
         >
-          <div className="h-full bg-[#4d7cff] rounded-full relative" style={{ width: `${pct}%` }}>
+          <div
+            className="h-full bg-[#4d7cff] rounded-full relative"
+            style={{ width: `${pct}%` }}
+          >
             <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
         </div>
@@ -124,7 +187,11 @@ const PreviewPlayer: React.FC = () => {
               disabled={duration === 0}
               className="flex items-center justify-center w-8 h-8 rounded-full bg-[#26262d] hover:bg-[#303039] text-ink-strong disabled:opacity-30 transition-colors"
             >
-              {isPlaying ? <Pause size={13} /> : <Play size={13} className="translate-x-0.5" />}
+              {isPlaying ? (
+                <Pause size={13} />
+              ) : (
+                <Play size={13} className="translate-x-0.5" />
+              )}
             </button>
             <button
               onClick={() => setMuted((m) => !m)}
@@ -134,9 +201,13 @@ const PreviewPlayer: React.FC = () => {
             </button>
           </div>
           <span className="text-[11px] font-mono text-[#71717f] tabular-nums">
-            {fmt(playhead)} <span className="text-[#3f3f4a]">/ {fmt(duration)}</span>
+            {fmt(playhead)}{' '}
+            <span className="text-[#3f3f4a]">/ {fmt(duration)}</span>
           </span>
-          <button className="flex items-center justify-center w-7 h-7 rounded text-[#71717f] hover:text-ink-base transition-colors" title="Fullscreen">
+          <button
+            className="flex items-center justify-center w-7 h-7 rounded text-[#71717f] hover:text-ink-base transition-colors"
+            title="Fullscreen"
+          >
             <Maximize2 size={14} />
           </button>
         </div>

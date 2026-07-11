@@ -1,7 +1,30 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Film, Wand2, Captions, Share2, Cpu, ShieldCheck, Zap, Plus, Send, Calendar, Search, Kanban, Image, Building2 } from 'lucide-react';
+import {
+  Film,
+  Wand2,
+  Captions,
+  Share2,
+  Cpu,
+  ShieldCheck,
+  Zap,
+  Plus,
+  Send,
+  Calendar,
+  Search,
+  Kanban,
+  Image,
+  Building2,
+  Clock,
+  Trash2,
+} from 'lucide-react';
 import { useEditorStore } from '@/store/editorStore';
+import {
+  listProjects,
+  openProject,
+  deleteProject,
+  type ProjectMeta,
+} from '@/lib/projectPersistence';
 
 const FEATURES = [
   {
@@ -41,22 +64,95 @@ const ADVANTAGES = [
 ];
 
 const SOCIAL_SHORTCUTS = [
-  { icon: Send,          label: 'Publish Now',  desc: 'Post to connected accounts immediately', path: '/mas/publish',   color: '#22c55e' },
-  { icon: Calendar,      label: 'Schedule',     desc: 'Queue posts for a specific date & time', path: '/mas/scheduler', color: '#4d7cff' },
-  { icon: Image,         label: 'Image Posts',  desc: 'Create image + caption posts',            path: '/mas/publish', color: '#e0a93a' },
-  { icon: Search,        label: 'Idea Scraper', desc: 'Trending topics & news ideas to post about', path: '/mas/research',  color: '#8aa6ff' },
-  { icon: Building2,     label: 'Listing Scraper', desc: 'Capture property listings from Zillow, Realtor & Redfin', path: '/mas/listings', color: '#34d399' },
-  { icon: Wand2,         label: 'AI Generate',  desc: 'AI-written captions for every platform',  path: '/mas/content',   color: '#a78bfa' },
-  { icon: Kanban,  label: 'Pipeline',     desc: 'Kanban board — ideas to published',       path: '/mas/pipeline',  color: '#f97316' },
+  {
+    icon: Send,
+    label: 'Publish Now',
+    desc: 'Post to connected accounts immediately',
+    path: '/mas/publish',
+    color: '#22c55e',
+  },
+  {
+    icon: Calendar,
+    label: 'Schedule',
+    desc: 'Queue posts for a specific date & time',
+    path: '/mas/scheduler',
+    color: '#4d7cff',
+  },
+  {
+    icon: Image,
+    label: 'Image Posts',
+    desc: 'Create image + caption posts',
+    path: '/mas/publish',
+    color: '#e0a93a',
+  },
+  {
+    icon: Search,
+    label: 'Idea Scraper',
+    desc: 'Trending topics & news ideas to post about',
+    path: '/mas/research',
+    color: '#8aa6ff',
+  },
+  {
+    icon: Building2,
+    label: 'Listing Scraper',
+    desc: 'Capture property listings from Zillow, Realtor & Redfin',
+    path: '/mas/listings',
+    color: '#34d399',
+  },
+  {
+    icon: Wand2,
+    label: 'AI Generate',
+    desc: 'AI-written captions for every platform',
+    path: '/mas/content',
+    color: '#a78bfa',
+  },
+  {
+    icon: Kanban,
+    label: 'Pipeline',
+    desc: 'Kanban board — ideas to published',
+    path: '/mas/pipeline',
+    color: '#f97316',
+  },
 ];
 
 const HomePage: React.FC = () => {
   const navigate = useNavigate();
   const { resetProject } = useEditorStore();
+  const [projects, setProjects] = useState<ProjectMeta[]>([]);
+
+  useEffect(() => {
+    void listProjects().then(setProjects);
+  }, []);
 
   const openNew = () => {
     resetProject();
     navigate('/editor');
+  };
+
+  const handleOpen = async (id: string) => {
+    const result = await openProject(id);
+    if (!result.ok) {
+      alert(result.error ?? 'Could not open project');
+      return;
+    }
+    if (result.missing.length > 0) {
+      alert(
+        `Heads up — ${result.missing.length} media file(s) were moved or deleted since this project was saved:\n\n${result.missing.join('\n')}`,
+      );
+    }
+    navigate('/editor');
+  };
+
+  const handleDelete = async (e: React.MouseEvent, p: ProjectMeta) => {
+    e.stopPropagation();
+    if (
+      !window.confirm(
+        `Delete project "${p.name}"? This cannot be undone. (Your media files are not deleted.)`,
+      )
+    )
+      return;
+    await deleteProject(p.id);
+    setProjects(await listProjects());
   };
 
   return (
@@ -73,7 +169,8 @@ const HomePage: React.FC = () => {
           Create & Publish AI-Powered Videos
         </h1>
         <p className="text-[14px] text-[#71717f] max-w-md mb-8">
-          Edit, caption, and publish to 8 social platforms — powered by Claude AI and FFmpeg, running entirely on your machine.
+          Edit, caption, and publish to 8 social platforms — powered by Claude
+          AI and FFmpeg, running entirely on your machine.
         </p>
         <button
           onClick={openNew}
@@ -83,6 +180,50 @@ const HomePage: React.FC = () => {
           New Project
         </button>
       </div>
+
+      {/* Recent projects */}
+      {projects.length > 0 && (
+        <div className="px-8 pb-8">
+          <p className="text-[11px] text-[#5a5a66] uppercase tracking-widest font-medium mb-4">
+            Recent projects
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            {projects.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => void handleOpen(p.id)}
+                className="group relative text-left p-4 rounded-xl bg-[#131316] border border-[#1d1d22] hover:border-[#4d7cff]/60 hover:bg-[#161619] transition-colors"
+              >
+                <div className="flex items-center justify-center w-9 h-9 rounded-lg mb-3 bg-[#4d7cff]/10 text-[#4d7cff]">
+                  <Film size={18} strokeWidth={1.8} />
+                </div>
+                <p className="text-[13px] font-semibold text-[#e8e8f0] mb-1 truncate pr-6">
+                  {p.name}
+                </p>
+                <p className="text-[11px] text-[#71717f]">
+                  {p.clipCount} clip{p.clipCount === 1 ? '' : 's'} ·{' '}
+                  {p.mediaCount} media
+                </p>
+                <p className="flex items-center gap-1 text-[10px] text-[#5a5a66] mt-1.5">
+                  <Clock size={10} />
+                  {p.savedAt
+                    ? new Date(p.savedAt).toLocaleString()
+                    : 'never saved'}
+                </p>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => void handleDelete(e, p)}
+                  className="absolute top-3 right-3 p-1.5 rounded-md text-[#4a4a55] opacity-0 group-hover:opacity-100 hover:text-[#f0556a] hover:bg-[#3a1a1f] transition-all"
+                  title="Delete project"
+                >
+                  <Trash2 size={13} />
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Feature grid */}
       <div className="px-8 pb-8">
@@ -104,9 +245,16 @@ const HomePage: React.FC = () => {
                 >
                   <Icon size={18} strokeWidth={1.8} />
                 </div>
-                <p className="text-[13px] font-semibold text-[#e8e8f0] mb-1">{f.title}</p>
-                <p className="text-[11px] text-[#71717f] leading-relaxed">{f.desc}</p>
-                <p className="text-[11px] font-medium mt-2.5 group-hover:underline" style={{ color: f.color }}>
+                <p className="text-[13px] font-semibold text-[#e8e8f0] mb-1">
+                  {f.title}
+                </p>
+                <p className="text-[11px] text-[#71717f] leading-relaxed">
+                  {f.desc}
+                </p>
+                <p
+                  className="text-[11px] font-medium mt-2.5 group-hover:underline"
+                  style={{ color: f.color }}
+                >
                   {f.action} →
                 </p>
               </button>
@@ -151,8 +299,12 @@ const HomePage: React.FC = () => {
                 >
                   <Icon size={16} strokeWidth={1.8} />
                 </div>
-                <p className="text-[12px] font-semibold text-[#e8e8f0] mb-0.5">{s.label}</p>
-                <p className="text-[10px] text-[#71717f] leading-relaxed">{s.desc}</p>
+                <p className="text-[12px] font-semibold text-[#e8e8f0] mb-0.5">
+                  {s.label}
+                </p>
+                <p className="text-[10px] text-[#71717f] leading-relaxed">
+                  {s.desc}
+                </p>
               </button>
             );
           })}
@@ -166,9 +318,13 @@ const HomePage: React.FC = () => {
             <Zap size={20} strokeWidth={1.8} />
           </div>
           <div>
-            <p className="text-[13px] font-semibold text-white mb-1">New: Speed Control & Fade Transitions</p>
+            <p className="text-[13px] font-semibold text-white mb-1">
+              New: Speed Control & Fade Transitions
+            </p>
             <p className="text-[11px] text-[#71717f] leading-relaxed">
-              Set any clip to 0.25x slow-mo up to 4x fast-forward. Add fade in/out transitions — all burned in via FFmpeg at export time. Select a clip and open the Properties panel to try it.
+              Set any clip to 0.25x slow-mo up to 4x fast-forward. Add fade
+              in/out transitions — all burned in via FFmpeg at export time.
+              Select a clip and open the Properties panel to try it.
             </p>
           </div>
         </div>
@@ -183,7 +339,10 @@ const HomePage: React.FC = () => {
           {ADVANTAGES.map((a) => {
             const Icon = a.icon;
             return (
-              <div key={a.text} className="flex items-center gap-3 text-[12px] text-[#9a9aa6]">
+              <div
+                key={a.text}
+                className="flex items-center gap-3 text-[12px] text-[#9a9aa6]"
+              >
                 <Icon size={14} className="text-[#4d7cff] shrink-0" />
                 {a.text}
               </div>

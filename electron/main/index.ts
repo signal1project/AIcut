@@ -1,5 +1,13 @@
 import { app, BrowserWindow, shell, ipcMain, nativeTheme } from 'electron';
 import { registerAiCutHandlers } from './aicuts';
+import {
+  registerMediaScheme,
+  registerMediaProtocolHandler,
+} from './aicuts/mediaProtocol';
+
+// Must be called before app 'ready' — grants the aicut-media:// scheme
+// stream/fetch privileges so <video>/<img> can load local media.
+registerMediaScheme();
 
 // WSL / headless GPU environments — use in-process GPU to avoid subprocess crash
 app.commandLine.appendSwitch('in-process-gpu');
@@ -156,9 +164,14 @@ async function startAgentBridge() {
       pid: process.pid,
       startedAt: new Date().toISOString(),
     };
-    const discoveryFile = path.join(app.getPath('userData'), 'aicut-bridge.json');
+    const discoveryFile = path.join(
+      app.getPath('userData'),
+      'aicut-bridge.json',
+    );
     fs.writeFileSync(discoveryFile, JSON.stringify(info, null, 2));
-    logger.log(`[AICut] Agent bridge listening on ${api.url} (discovery: ${discoveryFile})`);
+    logger.log(
+      `[AICut] Agent bridge listening on ${api.url} (discovery: ${discoveryFile})`,
+    );
   } catch (err) {
     logger.error('[AICut] Agent bridge failed to start', err);
   }
@@ -172,9 +185,14 @@ async function startAgentBridge() {
 async function startMasBackend() {
   try {
     const ok = await initSqlite3Db();
-    if (!ok) { logger.error('[AICut] DB init failed — MAS backend disabled'); return; }
+    if (!ok) {
+      logger.error('[AICut] DB init failed — MAS backend disabled');
+      return;
+    }
     await startMas(AppDataSource, store);
-    logger.log('[AICut] MAS backend ready (publish, research, scheduling, OAuth)');
+    logger.log(
+      '[AICut] MAS backend ready (publish, research, scheduling, OAuth)',
+    );
   } catch (err) {
     logger.error('[AICut] MAS backend failed to start', err);
   }
@@ -182,6 +200,7 @@ async function startMasBackend() {
 
 app.whenReady().then(async () => {
   try {
+    registerMediaProtocolHandler();
     registerContextMenuListener();
     new App();
     const bWin = await createWindow();

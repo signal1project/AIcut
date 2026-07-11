@@ -15,6 +15,8 @@ export interface ProbeResult {
   height?: number;
   fps?: number;
   hasAudio: boolean;
+  videoCodec?: string;
+  audioCodec?: string;
 }
 
 export interface TimelineClip {
@@ -55,13 +57,15 @@ export async function probeVideo(filePath: string): Promise<ProbeResult> {
         height: videoStream?.height,
         fps: den ? num / den : 30,
         hasAudio: !!audioStream,
+        videoCodec: videoStream?.codec_name,
+        audioCodec: audioStream?.codec_name,
       });
     });
   });
 }
 
-export async function getThumbnail(filePath: string, timeSeconds = 0): Promise<string> {
-  const outDir = path.join(os.tmpdir(), 'aicuts-thumbs');
+export async function getThumbnail(filePath: string, timeSeconds = 0, outDirOverride?: string): Promise<string> {
+  const outDir = outDirOverride ?? path.join(os.tmpdir(), 'aicuts-thumbs');
   fs.mkdirSync(outDir, { recursive: true });
   const outFile = path.join(outDir, `${uuidv4()}.jpg`);
 
