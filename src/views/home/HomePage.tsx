@@ -277,6 +277,12 @@ const HomePage: React.FC = () => {
               First time? Setup guide →
             </button>
             <button
+              onClick={() => navigate('/mas/settings')}
+              className="text-[11px] text-[#71717f] hover:text-[#c8c8d2] transition-colors"
+            >
+              Settings →
+            </button>
+            <button
               onClick={() => navigate('/mas/publish')}
               className="text-[11px] text-[#4d7cff] hover:underline"
             >

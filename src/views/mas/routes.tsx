@@ -10,6 +10,7 @@ import BrandPage from './BrandPage';
 import PipelinePage from './PipelinePage';
 import OmobonoPage from './OmobonoPage';
 import SchedulerPage from './SchedulerPage';
+import SettingsPage from './SettingsPage';
 
 // MAS feature routes, namespaced under /mas to coexist with the inherited
 // (legacy) routes. Spread into the main router's children.
@@ -68,5 +69,10 @@ export const masRoutes = [
     path: '/mas/scheduler',
     element: <SchedulerPage />,
     meta: { name: 'Scheduler' },
+  },
+  {
+    path: '/mas/settings',
+    element: <SettingsPage />,
+    meta: { name: 'Settings' },
   },
 ];

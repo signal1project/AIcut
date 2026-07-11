@@ -1,20 +1,33 @@
 import { Outlet, useNavigate, useLocation, NavLink } from 'react-router-dom';
 import { useEffect } from 'react';
-import { Home, Send, Wand2, Search, Kanban, BarChart2, MessageSquare, Calendar, Building2, Palette } from 'lucide-react';
+import {
+  Home,
+  Send,
+  Wand2,
+  Search,
+  Kanban,
+  BarChart2,
+  MessageSquare,
+  Calendar,
+  Building2,
+  Palette,
+  Settings,
+} from 'lucide-react';
 import WindowControlButtons from '@/components/WindowControlButtons/WindowControlButtons';
 import { ipc } from '@/lib/ipc';
 import { useEditorStore } from '@/store/editorStore';
 
 const MAS_NAV = [
-  { path: '/mas/publish',   label: 'Publish',   icon: Send },
-  { path: '/mas/scheduler', label: 'Schedule',  icon: Calendar },
-  { path: '/mas/content',   label: 'Generate',  icon: Wand2 },
-  { path: '/mas/research',  label: 'Research',  icon: Search },
-  { path: '/mas/listings',  label: 'Listings',  icon: Building2 },
-  { path: '/mas/pipeline',  label: 'Pipeline',  icon: Kanban },
+  { path: '/mas/publish', label: 'Publish', icon: Send },
+  { path: '/mas/scheduler', label: 'Schedule', icon: Calendar },
+  { path: '/mas/content', label: 'Generate', icon: Wand2 },
+  { path: '/mas/research', label: 'Research', icon: Search },
+  { path: '/mas/listings', label: 'Listings', icon: Building2 },
+  { path: '/mas/pipeline', label: 'Pipeline', icon: Kanban },
   { path: '/mas/analytics', label: 'Analytics', icon: BarChart2 },
-  { path: '/mas/engagement',label: 'Inbox',     icon: MessageSquare },
-  { path: '/mas/brand',     label: 'Brand',     icon: Palette },
+  { path: '/mas/engagement', label: 'Inbox', icon: MessageSquare },
+  { path: '/mas/brand', label: 'Brand', icon: Palette },
+  { path: '/mas/settings', label: 'Settings', icon: Settings },
 ];
 
 export const LayoutBody = () => {
@@ -48,7 +61,9 @@ export const LayoutBody = () => {
           >
             ✂
           </span>
-          <span className="text-[13px] font-semibold text-ink-strong tracking-tight">AICut</span>
+          <span className="text-[13px] font-semibold text-ink-strong tracking-tight">
+            AICut
+          </span>
           {inEditor && (
             <>
               <span className="text-ink-subtle">·</span>
@@ -65,7 +80,9 @@ export const LayoutBody = () => {
           {inSocial && (
             <>
               <span className="text-ink-subtle">·</span>
-              <span className="text-xs text-[#4d7cff] font-medium">Social Hub</span>
+              <span className="text-xs text-[#4d7cff] font-medium">
+                Social Hub
+              </span>
               <button
                 onClick={() => navigate('/')}
                 className="ml-1 flex items-center justify-center w-6 h-6 rounded text-[#5a5a66] hover:text-[#c8c8d2] hover:bg-[#1d1d22] transition-colors"

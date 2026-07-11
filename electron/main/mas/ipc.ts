@@ -1,6 +1,11 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import type { DataSource } from 'typeorm';
-import { AccountStatus, AuditAction, type AIProviderName, type Platform } from '@mas/types';
+import {
+  AccountStatus,
+  AuditAction,
+  type AIProviderName,
+  type Platform,
+} from '@mas/types';
 import { AI_PROVIDER_INFO } from '@mas/types';
 import { ConnectedAccountModel } from '../../db/models/mas/connectedAccount';
 import { AuditLogModel } from '../../db/models/mas/auditLog';
@@ -8,7 +13,11 @@ import { CredentialManager } from '../credentials/credentialManager';
 import { createOAuthService } from '../oauth';
 import type { OAuthClientConfig } from '../oauth/oauthService';
 import { Settings } from '../settings/settings';
-import { runOpenRouterOAuthFlow, openOllamaInstallPage } from '../ai/openRouterOAuth';
+import {
+  runOpenRouterOAuthFlow,
+  openOllamaInstallPage,
+} from '../ai/openRouterOAuth';
+import { runChatGPTSignIn } from '../ai/chatgptAuth';
 import { realOllamaDiscoverer } from '../ai/ollamaProvider';
 
 export interface MasIpcDeps {
@@ -28,28 +37,40 @@ export function registerMasIpc(deps: MasIpcDeps): void {
 
   // ── AI provider settings ───────────────────────────────────────────────────
 
-  ipcMain.handle('mas:settings:set-ai-key', (_e, name: AIProviderName, key: string) => {
-    settings.setAIProviderKey(name, key);
-    // Auto-activate this provider when a key is saved (unless one is already active).
-    const current = settings.getActiveAIProvider();
-    if (!current) settings.setActiveAIProvider(name);
-    return { ok: true };
-  });
+  ipcMain.handle(
+    'mas:settings:set-ai-key',
+    (_e, name: AIProviderName, key: string) => {
+      settings.setAIProviderKey(name, key);
+      // Auto-activate this provider when a key is saved (unless one is already active).
+      const current = settings.getActiveAIProvider();
+      if (!current) settings.setActiveAIProvider(name);
+      return { ok: true };
+    },
+  );
 
-  ipcMain.handle('mas:settings:set-active-provider', (_e, name: AIProviderName) => {
-    settings.setActiveAIProvider(name);
-    return { ok: true };
-  });
+  ipcMain.handle(
+    'mas:settings:set-active-provider',
+    (_e, name: AIProviderName) => {
+      settings.setActiveAIProvider(name);
+      return { ok: true };
+    },
+  );
 
-  ipcMain.handle('mas:settings:set-ai-model', (_e, name: AIProviderName, model: string) => {
-    settings.setAIProviderModel(name, model);
-    return { ok: true };
-  });
+  ipcMain.handle(
+    'mas:settings:set-ai-model',
+    (_e, name: AIProviderName, model: string) => {
+      settings.setAIProviderModel(name, model);
+      return { ok: true };
+    },
+  );
 
-  ipcMain.handle('mas:settings:set-oauth', (_e, platform: Platform, config: OAuthClientConfig) => {
-    settings.setPlatformOAuth(platform, config);
-    return { ok: true };
-  });
+  ipcMain.handle(
+    'mas:settings:set-oauth',
+    (_e, platform: Platform, config: OAuthClientConfig) => {
+      settings.setPlatformOAuth(platform, config);
+      return { ok: true };
+    },
+  );
 
   // ── Brand kit ──────────────────────────────────────────────────────────────
 
@@ -57,7 +78,16 @@ export function registerMasIpc(deps: MasIpcDeps): void {
 
   ipcMain.handle(
     'mas:settings:set-brand-kit',
-    (_e, kit: { voice: string; audience: string; hashtags: string[]; bannedWords: string[]; signature: string }) => {
+    (
+      _e,
+      kit: {
+        voice: string;
+        audience: string;
+        hashtags: string[];
+        bannedWords: string[];
+        signature: string;
+      },
+    ) => {
       settings.setBrandKit(kit);
       return { ok: true };
     },
@@ -81,7 +111,8 @@ export function registerMasIpc(deps: MasIpcDeps): void {
         isConfigured: ps !== null,
         isActive: active?.name === info.name,
         model: ps?.model ?? null,
-        ollamaBaseUrl: info.name === 'ollama' ? settings.getOllamaBaseUrl() : null,
+        ollamaBaseUrl:
+          info.name === 'ollama' ? settings.getOllamaBaseUrl() : null,
       };
     });
     return {
@@ -133,6 +164,34 @@ export function registerMasIpc(deps: MasIpcDeps): void {
     return { ok: true };
   });
 
+  // ── ChatGPT sign-in (OpenAI Codex OAuth — device-code flow) ────────────────
+
+  /**
+   * Run the "Sign in with ChatGPT" device-code flow. The user code is pushed
+   * to the renderer via 'mas:ai:chatgpt-user-code' as soon as it's known (it
+   * is also copied to the clipboard); this handler resolves only when the
+   * whole flow completes (approved + tokens stored) or fails.
+   */
+  ipcMain.handle('mas:ai:chatgpt-oauth', async (event) => {
+    const senderWin = BrowserWindow.fromWebContents(event.sender);
+    if (!senderWin) throw new Error('Could not find the parent BrowserWindow.');
+
+    await runChatGPTSignIn(senderWin, settings, (info) => {
+      if (!event.sender.isDestroyed())
+        event.sender.send('mas:ai:chatgpt-user-code', info);
+    });
+
+    const current = settings.getActiveAIProvider();
+    if (!current) settings.setActiveAIProvider('chatgpt');
+    return { ok: true };
+  });
+
+  /** Forget the stored ChatGPT tokens (sign out). */
+  ipcMain.handle('mas:ai:chatgpt-disconnect', () => {
+    settings.clearChatGPTTokens();
+    return { ok: true };
+  });
+
   // ── Social platform OAuth ──────────────────────────────────────────────────
 
   ipcMain.handle('mas:oauth:authorize-url', (_e, platform: Platform) => {
@@ -144,7 +203,9 @@ export function registerMasIpc(deps: MasIpcDeps): void {
   /** List all connected accounts (no secrets — for the publish UI account picker). */
   ipcMain.handle('mas:accounts:list', async () => {
     const repo = dataSource.getRepository(ConnectedAccountModel);
-    const accounts = await repo.find({ order: { platform: 'ASC', accountName: 'ASC' } });
+    const accounts = await repo.find({
+      order: { platform: 'ASC', accountName: 'ASC' },
+    });
     return accounts.map((a) => ({
       id: a.id,
       platform: a.platform,
@@ -168,15 +229,22 @@ export function registerMasIpc(deps: MasIpcDeps): void {
       },
     ) => {
       const config = settings.getPlatformOAuth(args.platform);
-      if (!config) throw new Error(`Configure the ${args.platform} OAuth app first.`);
+      if (!config)
+        throw new Error(`Configure the ${args.platform} OAuth app first.`);
 
-      const { code } = oauth.parseCallback(args.redirectUrl, args.expectedState);
+      const { code } = oauth.parseCallback(
+        args.redirectUrl,
+        args.expectedState,
+      );
       const bundle = await oauth.exchangeCode(args.platform, config, {
         code,
         codeVerifier: args.codeVerifier,
       });
 
-      const credentialRef = CredentialManager.refFor(args.platform, args.externalId);
+      const credentialRef = CredentialManager.refFor(
+        args.platform,
+        args.externalId,
+      );
       credentials.save(credentialRef, bundle);
 
       const repo = dataSource.getRepository(ConnectedAccountModel);
@@ -202,7 +270,11 @@ export function registerMasIpc(deps: MasIpcDeps): void {
         }),
       );
 
-      return { id: account.id, platform: account.platform, accountName: account.accountName };
+      return {
+        id: account.id,
+        platform: account.platform,
+        accountName: account.accountName,
+      };
     },
   );
 }

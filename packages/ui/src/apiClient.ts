@@ -27,7 +27,12 @@ export interface CampaignPackageSummary {
   objective: string;
   niche: string;
   platforms: Platform[];
-  status: 'needs_approval' | 'approved' | 'scheduled' | 'published' | 'rejected';
+  status:
+    | 'needs_approval'
+    | 'approved'
+    | 'scheduled'
+    | 'published'
+    | 'rejected';
   createdAt: string;
   updatedAt: string;
 }
@@ -57,8 +62,19 @@ export interface WorkflowCampaignPackageResult {
     status: string;
     editingMode: string;
     manifestFileName: string;
-    scenes: Array<{ id: string; onScreenText: string; voiceover: string; durationSeconds: number }>;
-    exports: Array<{ platform: Platform; aspectRatio: string; resolution: string; caption: string; hashtags: string[] }>;
+    scenes: Array<{
+      id: string;
+      onScreenText: string;
+      voiceover: string;
+      durationSeconds: number;
+    }>;
+    exports: Array<{
+      platform: Platform;
+      aspectRatio: string;
+      resolution: string;
+      caption: string;
+      hashtags: string[];
+    }>;
   };
   publishingPlan: {
     status: string;
@@ -179,7 +195,11 @@ export interface CompetitorEntry {
   platform: string;
   handle: string;
   notes: string;
-  snapshots: Array<{ date: string; followers: number; engagementRate?: number }>;
+  snapshots: Array<{
+    date: string;
+    followers: number;
+    engagementRate?: number;
+  }>;
 }
 
 export interface ListingVideoResult {
@@ -193,7 +213,13 @@ export interface ListingVideoResult {
 export interface AutoClipResult {
   transcriptSource: 'provided' | 'whisper';
   pickedBy: 'ai' | 'heuristic';
-  clips: Array<{ path: string; start: number; end: number; durationSeconds: number; hook: string }>;
+  clips: Array<{
+    path: string;
+    start: number;
+    end: number;
+    durationSeconds: number;
+    hook: string;
+  }>;
 }
 
 export interface AnalyticsSnapshot {
@@ -339,7 +365,7 @@ export interface AlgorithmHints {
 export interface AIProviderStatus {
   name: AIProviderName;
   label: string;
-  authMethod: 'api_key' | 'oauth_key' | 'local';
+  authMethod: 'api_key' | 'oauth_key' | 'oauth_token' | 'local';
   supportsImages: boolean;
   dashboardUrl: string;
   isConfigured: boolean;
@@ -380,7 +406,11 @@ export class MasApiClient {
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
   }
 
-  private async req<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async req<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
     const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
       method,
       headers: {
@@ -405,7 +435,9 @@ export class MasApiClient {
     return this.req('GET', '/health');
   }
 
-  publish(body: PublishRequestBody): Promise<PublishOutcome | ScheduleAccepted> {
+  publish(
+    body: PublishRequestBody,
+  ): Promise<PublishOutcome | ScheduleAccepted> {
     return this.req('POST', '/api/publish', body);
   }
 
@@ -427,19 +459,34 @@ export class MasApiClient {
     return this.req('POST', '/api/content/carousel', body);
   }
 
-  generateImage(body: { prompt: string; width?: number; height?: number }): Promise<{ url: string }> {
+  generateImage(body: {
+    prompt: string;
+    width?: number;
+    height?: number;
+  }): Promise<{ url: string }> {
     return this.req('POST', '/api/content/image', body);
   }
 
-  captureAnalytics(body: { accountId: string; externalPostId: string }): Promise<AnalyticsSnapshot> {
+  captureAnalytics(body: {
+    accountId: string;
+    externalPostId: string;
+  }): Promise<AnalyticsSnapshot> {
     return this.req('POST', '/api/analytics/capture', body);
   }
 
-  getAnalyticsByAccount(accountId: string): Promise<{ snapshots: AnalyticsSnapshot[] }> {
-    return this.req('GET', `/api/analytics?accountId=${encodeURIComponent(accountId)}`);
+  getAnalyticsByAccount(
+    accountId: string,
+  ): Promise<{ snapshots: AnalyticsSnapshot[] }> {
+    return this.req(
+      'GET',
+      `/api/analytics?accountId=${encodeURIComponent(accountId)}`,
+    );
   }
 
-  ingestComments(body: { accountId: string; externalPostId: string }): Promise<{ items: EngagementItem[] }> {
+  ingestComments(body: {
+    accountId: string;
+    externalPostId: string;
+  }): Promise<{ items: EngagementItem[] }> {
     return this.req('POST', '/api/engagement/ingest', body);
   }
 
@@ -447,22 +494,43 @@ export class MasApiClient {
     return this.req('GET', '/api/engagement/pending');
   }
 
-  updateEngagementDraft(id: string, draftReply: string): Promise<{ ok: boolean }> {
-    return this.req('PATCH', `/api/engagement/${encodeURIComponent(id)}/draft`, { draftReply });
+  updateEngagementDraft(
+    id: string,
+    draftReply: string,
+  ): Promise<{ ok: boolean }> {
+    return this.req(
+      'PATCH',
+      `/api/engagement/${encodeURIComponent(id)}/draft`,
+      { draftReply },
+    );
   }
 
-  approveEngagement(id: string, overrideText?: string): Promise<{ externalCommentId: string }> {
-    return this.req('POST', `/api/engagement/${encodeURIComponent(id)}/approve`, { overrideText });
+  approveEngagement(
+    id: string,
+    overrideText?: string,
+  ): Promise<{ externalCommentId: string }> {
+    return this.req(
+      'POST',
+      `/api/engagement/${encodeURIComponent(id)}/approve`,
+      { overrideText },
+    );
   }
 
   dismissEngagement(id: string): Promise<{ ok: boolean }> {
-    return this.req('POST', `/api/engagement/${encodeURIComponent(id)}/dismiss`, {});
+    return this.req(
+      'POST',
+      `/api/engagement/${encodeURIComponent(id)}/dismiss`,
+      {},
+    );
   }
 
   // ── Trending Research ───────────────────────────────────────────────────────
 
   scrapeContent(keyword: string): Promise<ScrapeResponse> {
-    return this.req('GET', `/api/research/scrape?keyword=${encodeURIComponent(keyword)}`);
+    return this.req(
+      'GET',
+      `/api/research/scrape?keyword=${encodeURIComponent(keyword)}`,
+    );
   }
 
   getTrending(params?: {
@@ -511,14 +579,26 @@ export class MasApiClient {
     id: string,
     body: { platforms: Platform[]; tone?: string; highlight?: string },
   ): Promise<ListingAdResult> {
-    return this.req('POST', `/api/listings/${encodeURIComponent(id)}/generate-ad`, body);
+    return this.req(
+      'POST',
+      `/api/listings/${encodeURIComponent(id)}/generate-ad`,
+      body,
+    );
   }
 
   generateListingVideo(
     id: string,
-    body: { maxPhotos?: number; secondsPerPhoto?: number; narration?: boolean } = {},
+    body: {
+      maxPhotos?: number;
+      secondsPerPhoto?: number;
+      narration?: boolean;
+    } = {},
   ): Promise<ListingVideoResult> {
-    return this.req('POST', `/api/listings/${encodeURIComponent(id)}/generate-video`, body);
+    return this.req(
+      'POST',
+      `/api/listings/${encodeURIComponent(id)}/generate-video`,
+      body,
+    );
   }
 
   captureListingUrl(url: string): Promise<{ listing: PropertyListingSummary }> {
@@ -540,7 +620,10 @@ export class MasApiClient {
 
   // ── Insights ────────────────────────────────────────────────────────────────
 
-  getCalendar(from?: string, to?: string): Promise<{ entries: CalendarEntry[] }> {
+  getCalendar(
+    from?: string,
+    to?: string,
+  ): Promise<{ entries: CalendarEntry[] }> {
     const qs = new URLSearchParams();
     if (from) qs.set('from', from);
     if (to) qs.set('to', to);
@@ -553,24 +636,48 @@ export class MasApiClient {
     return this.req('GET', `/api/insights/best-times${query}`);
   }
 
-  recycleTopPosts(body: { count?: number; spacingHours?: number } = {}): Promise<RecycleOutcome> {
-    return this.req('POST', '/api/insights/recycle', { count: 3, spacingHours: 24, ...body });
+  recycleTopPosts(
+    body: { count?: number; spacingHours?: number } = {},
+  ): Promise<RecycleOutcome> {
+    return this.req('POST', '/api/insights/recycle', {
+      count: 3,
+      spacingHours: 24,
+      ...body,
+    });
   }
 
   listCompetitors(): Promise<{ competitors: CompetitorEntry[] }> {
     return this.req('GET', '/api/insights/competitors');
   }
 
-  addCompetitor(body: { name: string; platform: string; handle: string; notes?: string }): Promise<{ competitor: CompetitorEntry }> {
-    return this.req('POST', '/api/insights/competitors', { notes: '', ...body });
+  addCompetitor(body: {
+    name: string;
+    platform: string;
+    handle: string;
+    notes?: string;
+  }): Promise<{ competitor: CompetitorEntry }> {
+    return this.req('POST', '/api/insights/competitors', {
+      notes: '',
+      ...body,
+    });
   }
 
-  addCompetitorSnapshot(id: string, body: { followers: number; engagementRate?: number }): Promise<{ competitor: CompetitorEntry }> {
-    return this.req('POST', `/api/insights/competitors/${encodeURIComponent(id)}/snapshot`, body);
+  addCompetitorSnapshot(
+    id: string,
+    body: { followers: number; engagementRate?: number },
+  ): Promise<{ competitor: CompetitorEntry }> {
+    return this.req(
+      'POST',
+      `/api/insights/competitors/${encodeURIComponent(id)}/snapshot`,
+      body,
+    );
   }
 
   deleteCompetitor(id: string): Promise<{ ok: boolean }> {
-    return this.req('DELETE', `/api/insights/competitors/${encodeURIComponent(id)}`);
+    return this.req(
+      'DELETE',
+      `/api/insights/competitors/${encodeURIComponent(id)}`,
+    );
   }
 
   generateBioPage(body: {
@@ -581,7 +688,13 @@ export class MasApiClient {
     email?: string;
     accentColor?: string;
     links: Array<{ label: string; url: string }>;
-    listings?: Array<{ address: string; price?: string; specs?: string; url?: string; photoUrl?: string }>;
+    listings?: Array<{
+      address: string;
+      price?: string;
+      specs?: string;
+      url?: string;
+      photoUrl?: string;
+    }>;
   }): Promise<{ path: string; bytes: number }> {
     return this.req('POST', '/api/insights/bio-page', body);
   }
@@ -601,11 +714,16 @@ export class MasApiClient {
     return this.req('GET', '/api/agent/adapters');
   }
 
-  createCampaignPackage(body: WorkflowCampaignPackageRequest): Promise<WorkflowCampaignPackageResult> {
+  createCampaignPackage(
+    body: WorkflowCampaignPackageRequest,
+  ): Promise<WorkflowCampaignPackageResult> {
     return this.req('POST', '/api/workflow/campaign-package', body);
   }
 
-  listCampaignPackages(params?: { status?: CampaignPackageSummary['status']; limit?: number }): Promise<{ packages: CampaignPackageSummary[] }> {
+  listCampaignPackages(params?: {
+    status?: CampaignPackageSummary['status'];
+    limit?: number;
+  }): Promise<{ packages: CampaignPackageSummary[] }> {
     const qs = new URLSearchParams();
     if (params?.status) qs.set('status', params.status);
     if (params?.limit) qs.set('limit', String(params.limit));
@@ -613,11 +731,31 @@ export class MasApiClient {
     return this.req('GET', `/api/workflow/campaign-packages${query}`);
   }
 
-  updateCampaignPackageStatus(id: string, status: CampaignPackageSummary['status']): Promise<CampaignPackageSummary> {
-    return this.req('PATCH', `/api/workflow/campaign-packages/${encodeURIComponent(id)}/status`, { status });
+  updateCampaignPackageStatus(
+    id: string,
+    status: CampaignPackageSummary['status'],
+  ): Promise<CampaignPackageSummary> {
+    return this.req(
+      'PATCH',
+      `/api/workflow/campaign-packages/${encodeURIComponent(id)}/status`,
+      { status },
+    );
   }
 
-  recordPublicationFeedback(id: string, body: { platform: Platform; externalPostId: string; accountId?: string; publishedAt?: string; notes?: string }): Promise<CampaignPackageSummary> {
-    return this.req('POST', `/api/workflow/campaign-packages/${encodeURIComponent(id)}/publication-feedback`, body);
+  recordPublicationFeedback(
+    id: string,
+    body: {
+      platform: Platform;
+      externalPostId: string;
+      accountId?: string;
+      publishedAt?: string;
+      notes?: string;
+    },
+  ): Promise<CampaignPackageSummary> {
+    return this.req(
+      'POST',
+      `/api/workflow/campaign-packages/${encodeURIComponent(id)}/publication-feedback`,
+      body,
+    );
   }
 }

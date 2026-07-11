@@ -6,15 +6,33 @@ import { ClaudeProvider, type AnthropicLike } from './claudeProvider';
 import { OpenAIProvider, type OpenAILike } from './openaiProvider';
 import { GroqProvider, type GroqLike } from './groqProvider';
 import { OpenRouterProvider, OPENROUTER_BASE_URL } from './openRouterProvider';
-import { OllamaProvider, OLLAMA_DEFAULT_BASE_URL, OLLAMA_OPENAI_COMPAT_PATH } from './ollamaProvider';
+import {
+  OllamaProvider,
+  OLLAMA_DEFAULT_BASE_URL,
+  OLLAMA_OPENAI_COMPAT_PATH,
+} from './ollamaProvider';
+import { ChatGPTProvider, type ChatGPTAuthSource } from './chatgptProvider';
 
 export { ClaudeProvider } from './claudeProvider';
 export { OpenAIProvider } from './openaiProvider';
 export { GroqProvider } from './groqProvider';
-export { OpenRouterProvider, createOpenRouterProvider } from './openRouterProvider';
-export { OllamaProvider, createOllamaProvider, realOllamaDiscoverer } from './ollamaProvider';
+export {
+  OpenRouterProvider,
+  createOpenRouterProvider,
+} from './openRouterProvider';
+export {
+  OllamaProvider,
+  createOllamaProvider,
+  realOllamaDiscoverer,
+} from './ollamaProvider';
 export type { OllamaModel, OllamaDiscoverer } from './ollamaProvider';
-export { runOpenRouterOAuthFlow, openOllamaInstallPage } from './openRouterOAuth';
+export {
+  runOpenRouterOAuthFlow,
+  openOllamaInstallPage,
+} from './openRouterOAuth';
+export { ChatGPTProvider, parseResponsesSse } from './chatgptProvider';
+export type { ChatGPTAuthSource } from './chatgptProvider';
+export { runChatGPTSignIn, ensureFreshChatGPTAuth } from './chatgptAuth';
 export { systemPrompt, resolveMaxTokens } from './prompt';
 
 export interface CreateAIProviderOptions {
@@ -24,6 +42,8 @@ export interface CreateAIProviderOptions {
   baseUrl?: string;
   /** Model slug override. */
   model?: string;
+  /** Required for the chatgpt provider — supplies fresh OAuth access tokens. */
+  chatgptAuth?: ChatGPTAuthSource;
 }
 
 /** Construct an AI provider from a name + options. Options come from Settings. */
@@ -54,6 +74,14 @@ export function createAIProvider(
         }) as unknown as OpenAILike,
         opts.model,
       );
+    case 'chatgpt': {
+      if (!opts.chatgptAuth) {
+        throw new Error(
+          'ChatGPT provider requires a chatgptAuth token source.',
+        );
+      }
+      return new ChatGPTProvider(opts.chatgptAuth, opts.model);
+    }
     case 'ollama': {
       const base = opts.baseUrl ?? OLLAMA_DEFAULT_BASE_URL;
       return new OllamaProvider(

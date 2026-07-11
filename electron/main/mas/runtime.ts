@@ -15,9 +15,17 @@ import {
   createPublishRouter,
   type EngineAccount,
 } from '../publishEngine';
-import { AnalyticsService, TypeOrmSnapshotStore, createAnalyticsRouter } from '../analytics';
+import {
+  AnalyticsService,
+  TypeOrmSnapshotStore,
+  createAnalyticsRouter,
+} from '../analytics';
 import { ContentService, createContentRouter } from '../content';
-import { EngagementService, TypeOrmEngagementStore, createEngagementRouter } from '../engagement';
+import {
+  EngagementService,
+  TypeOrmEngagementStore,
+  createEngagementRouter,
+} from '../engagement';
 import {
   TrendingResearchService,
   GoogleTrendsFetcher,
@@ -26,16 +34,28 @@ import {
   createResearchRouter,
 } from '../research';
 import { PlatformAlgorithmAgent, createAlgorithmRouter } from '../algorithm';
-import { TypeOrmListingStore, ListingAdService, ListingVideoService, createListingsRouter } from '../listings';
+import {
+  TypeOrmListingStore,
+  ListingAdService,
+  ListingVideoService,
+  createListingsRouter,
+} from '../listings';
 import { InsightsService, createInsightsRouter } from '../insights';
 import { ClipService, createClipsRouter } from '../clips';
 import path from 'node:path';
 import os from 'node:os';
 import { createDefaultAgentRegistry, createAgentRouter } from '../agent';
 import { CapCutPackageService, createCapCutRouter } from '../capcut';
-import { TypeOrmCampaignPackageStore, SocialEngineWorkflowService, createWorkflowRouter } from '../workflow';
+import {
+  TypeOrmCampaignPackageStore,
+  SocialEngineWorkflowService,
+  createWorkflowRouter,
+} from '../workflow';
 import type { FeatureRoute } from '../server';
-import { createAIProvider as buildAIProvider } from '../ai';
+import {
+  createAIProvider as buildAIProvider,
+  ensureFreshChatGPTAuth,
+} from '../ai';
 
 export interface MasRuntimeDeps {
   dataSource: DataSource;
@@ -79,9 +99,15 @@ export function buildMasRuntime(deps: MasRuntimeDeps): MasRuntime {
   const resolveToken = async (account: EngineAccount): Promise<string> => {
     const config = settings.getPlatformOAuth(account.platform);
     if (!config) {
-      throw new Error(`No OAuth client configured for ${account.platform}. Set it in Settings.`);
+      throw new Error(
+        `No OAuth client configured for ${account.platform}. Set it in Settings.`,
+      );
     }
-    const bundle = await oauth.ensureFresh(account.platform, account.credentialRef, config);
+    const bundle = await oauth.ensureFresh(
+      account.platform,
+      account.credentialRef,
+      config,
+    );
     return bundle.accessToken;
   };
 
@@ -89,11 +115,13 @@ export function buildMasRuntime(deps: MasRuntimeDeps): MasRuntime {
 
   const resolveProvider = () => {
     const active = settings.getActiveAIProvider();
-    if (!active) throw new Error('No AI provider configured. Set one in Settings.');
+    if (!active)
+      throw new Error('No AI provider configured. Set one in Settings.');
     return buildAIProvider(active.name, {
       apiKey: active.apiKey,
       baseUrl: active.baseUrl,
       model: active.model,
+      chatgptAuth: { ensureFresh: () => ensureFreshChatGPTAuth(settings) },
     });
   };
   const resolveImageProvider = () => {
@@ -177,11 +205,19 @@ export function buildMasRuntime(deps: MasRuntimeDeps): MasRuntime {
   const research = new TrendingResearchService(dataSource, trendFetchers);
   const listings = new TypeOrmListingStore(dataSource);
   const listingAds = new ListingAdService(listings, content);
-  const listingVideos = new ListingVideoService(listings, path.join(dataDir, 'listing-reels'));
-  const insights = new InsightsService({ dataSource, engine: publish, scheduler });
+  const listingVideos = new ListingVideoService(
+    listings,
+    path.join(dataDir, 'listing-reels'),
+  );
+  const insights = new InsightsService({
+    dataSource,
+    engine: publish,
+    scheduler,
+  });
   const clips = new ClipService({
     outputDir: path.join(dataDir, 'clips'),
-    resolveOpenAiKey: () => settings.getProviderSettings('openai')?.apiKey ?? null,
+    resolveOpenAiKey: () =>
+      settings.getProviderSettings('openai')?.apiKey ?? null,
     resolveProvider: () => {
       try {
         return resolveProvider();
@@ -212,7 +248,13 @@ export function buildMasRuntime(deps: MasRuntimeDeps): MasRuntime {
     { path: '/agent', router: createAgentRouter(agentRegistry) },
     { path: '/capcut', router: createCapCutRouter(capcut) },
     { path: '/workflow', router: createWorkflowRouter(workflow) },
-    { path: '/listings', router: createListingsRouter(listings, { adService: listingAds, videoService: listingVideos }) },
+    {
+      path: '/listings',
+      router: createListingsRouter(listings, {
+        adService: listingAds,
+        videoService: listingVideos,
+      }),
+    },
     { path: '/clips', router: createClipsRouter(clips) },
     {
       path: '/insights',
@@ -224,5 +266,20 @@ export function buildMasRuntime(deps: MasRuntimeDeps): MasRuntime {
     },
   ];
 
-  return { routes, scheduler, publish, content, analytics, engagement, research, algorithm, agentRegistry, capcut, workflow, listings, insights, dataDir };
+  return {
+    routes,
+    scheduler,
+    publish,
+    content,
+    analytics,
+    engagement,
+    research,
+    algorithm,
+    agentRegistry,
+    capcut,
+    workflow,
+    listings,
+    insights,
+    dataDir,
+  };
 }

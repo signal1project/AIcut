@@ -32,9 +32,17 @@ const K = {
   providerKey: (n: AIProviderName) => `mas.settings.ai.key.${n}`,
   providerModel: (n: AIProviderName) => `mas.settings.ai.model.${n}`,
   ollamaBaseUrl: 'mas.settings.ai.ollama.baseUrl',
+  chatgptTokens: 'mas.settings.ai.chatgpt.tokens',
   brandKit: 'mas.settings.brand.kit',
   competitors: 'mas.settings.competitors',
 };
+
+/** OAuth token bundle for ChatGPT sign-in (main-process only, like API keys). */
+export interface ChatGPTTokenBundle {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+}
 
 /**
  * Brand voice profile injected into every AI content brief so generated copy
@@ -61,7 +69,11 @@ export interface CompetitorEntry {
   handle: string;
   notes: string;
   /** Manual metric snapshots: { date, followers, engagementRate? } */
-  snapshots: Array<{ date: string; followers: number; engagementRate?: number }>;
+  snapshots: Array<{
+    date: string;
+    followers: number;
+    engagementRate?: number;
+  }>;
 }
 
 /** Typed accessor over persisted app settings used by the MAS runtime. */
@@ -75,7 +87,11 @@ export class Settings {
     if (!raw || typeof raw !== 'object') return null;
     const cfg = raw as Partial<OAuthClientConfig>;
     if (!cfg.clientId || !cfg.redirectUri) return null;
-    return { clientId: cfg.clientId, clientSecret: cfg.clientSecret, redirectUri: cfg.redirectUri };
+    return {
+      clientId: cfg.clientId,
+      clientSecret: cfg.clientSecret,
+      redirectUri: cfg.redirectUri,
+    };
   }
 
   setPlatformOAuth(platform: Platform, config: OAuthClientConfig): void {
@@ -91,30 +107,7 @@ export class Settings {
   getActiveAIProvider(): AIProviderSettings | null {
     const name = this.store.get(K.activeProvider) as AIProviderName | undefined;
     if (!name) return null;
-
-    const info = AI_PROVIDER_INFO[name];
-    if (!info) return null;
-
-    // Local providers (Ollama) don't need an API key.
-    if (info.authMethod === 'local') {
-      return {
-        name,
-        authMethod: info.authMethod,
-        apiKey: '',
-        baseUrl: this.getOllamaBaseUrl(),
-        model: this.store.get(K.providerModel(name)) as string | undefined,
-      };
-    }
-
-    const apiKey = this.store.get(K.providerKey(name)) as string | undefined;
-    if (!apiKey) return null;
-
-    return {
-      name,
-      authMethod: info.authMethod,
-      apiKey,
-      model: this.store.get(K.providerModel(name)) as string | undefined,
-    };
+    return this.getProviderSettings(name);
   }
 
   /** Return settings for a specific provider (regardless of which is active). */
@@ -128,6 +121,18 @@ export class Settings {
         authMethod: info.authMethod,
         apiKey: '',
         baseUrl: this.getOllamaBaseUrl(),
+        model: this.store.get(K.providerModel(name)) as string | undefined,
+      };
+    }
+
+    // Token-based providers (ChatGPT): configured = a token bundle exists.
+    // The provider refreshes/reads tokens itself; no apiKey is involved.
+    if (info.authMethod === 'oauth_token') {
+      if (!this.getChatGPTTokens()) return null;
+      return {
+        name,
+        authMethod: info.authMethod,
+        apiKey: '',
         model: this.store.get(K.providerModel(name)) as string | undefined,
       };
     }
@@ -155,10 +160,35 @@ export class Settings {
     this.store.set(K.activeProvider, name);
   }
 
+  // ── ChatGPT sign-in tokens ─────────────────────────────────────────────────
+
+  getChatGPTTokens(): ChatGPTTokenBundle | null {
+    const raw = this.store.get(K.chatgptTokens);
+    if (!raw || typeof raw !== 'object') return null;
+    const t = raw as Partial<ChatGPTTokenBundle>;
+    if (!t.accessToken) return null;
+    return {
+      accessToken: t.accessToken,
+      refreshToken: t.refreshToken ?? '',
+      expiresAt: typeof t.expiresAt === 'number' ? t.expiresAt : 0,
+    };
+  }
+
+  setChatGPTTokens(tokens: ChatGPTTokenBundle): void {
+    this.store.set(K.chatgptTokens, tokens);
+  }
+
+  clearChatGPTTokens(): void {
+    this.store.set(K.chatgptTokens, null);
+  }
+
   // ── Ollama-specific ────────────────────────────────────────────────────────
 
   getOllamaBaseUrl(): string {
-    return (this.store.get(K.ollamaBaseUrl) as string | undefined) ?? OLLAMA_DEFAULT_BASE_URL;
+    return (
+      (this.store.get(K.ollamaBaseUrl) as string | undefined) ??
+      OLLAMA_DEFAULT_BASE_URL
+    );
   }
 
   setOllamaBaseUrl(url: string): void {
@@ -199,7 +229,9 @@ export class Settings {
 
   /** Image generation always routes to OpenAI (the only provider that supports it). */
   getImageProvider(): AIProviderSettings | null {
-    const apiKey = this.store.get(K.providerKey('openai')) as string | undefined;
+    const apiKey = this.store.get(K.providerKey('openai')) as
+      | string
+      | undefined;
     if (!apiKey) return null;
     return { name: 'openai', authMethod: 'api_key', apiKey };
   }
