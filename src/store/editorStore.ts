@@ -78,6 +78,7 @@ export interface EditorState {
   hydrateProject: (snapshot: ProjectSnapshot) => void;
   snapshotProject: () => ProjectSnapshot;
   setSaveState: (state: SaveState, savedAt?: string) => void;
+  forkProjectAs: (name: string) => void;
   addMediaItem: (item: MediaItem) => void;
   addClipToTrack: (
     trackId: string,
@@ -198,6 +199,16 @@ export const useEditorStore = create<EditorState>()(
       set((s) => {
         s.saveState = state;
         if (savedAt) s.lastSavedAt = savedAt;
+      }),
+
+    // "Save As": current editor content becomes a NEW project (new id + name);
+    // the previously saved project file is left untouched on disk.
+    forkProjectAs: (name) =>
+      set((s) => {
+        s.projectId = uuidv4();
+        s.projectName = name.trim() || 'Untitled Project';
+        s.lastSavedAt = null;
+        s.saveState = 'dirty';
       }),
 
     addMediaItem: (item) =>

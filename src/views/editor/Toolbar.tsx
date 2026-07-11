@@ -15,10 +15,11 @@ import {
   Loader2,
   Save,
   Check,
+  Copy,
 } from 'lucide-react';
 import { useEditorStore } from '@/store/editorStore';
 import { ipc } from '@/lib/ipc';
-import { saveCurrentProject } from '@/lib/projectPersistence';
+import { saveCurrentProject, saveProjectAs } from '@/lib/projectPersistence';
 
 const RESOLUTIONS = ['1080p', '4k', '720p'] as const;
 
@@ -65,6 +66,22 @@ const Toolbar: React.FC = () => {
     '1080p',
   );
   const [autoEditing, setAutoEditing] = useState(false);
+  const [showSaveAs, setShowSaveAs] = useState(false);
+  const [saveAsName, setSaveAsName] = useState('');
+  const [savingAs, setSavingAs] = useState(false);
+
+  const openSaveAs = () => {
+    setSaveAsName(`${useEditorStore.getState().projectName} copy`);
+    setShowSaveAs((v) => !v);
+  };
+
+  const handleSaveAs = async () => {
+    if (!saveAsName.trim()) return;
+    setSavingAs(true);
+    const ok = await saveProjectAs(saveAsName);
+    setSavingAs(false);
+    if (ok) setShowSaveAs(false);
+  };
 
   const togglePlay = () => {
     if (duration === 0) return;
@@ -257,6 +274,52 @@ const Toolbar: React.FC = () => {
           </>
         )}
       </button>
+
+      {/* Save As */}
+      <div className="relative">
+        <button
+          onClick={openSaveAs}
+          className="flex items-center gap-1.5 px-2.5 h-8 rounded-md bg-[#26262d] hover:bg-[#303039] text-[#c8c8d2] text-[11px] font-medium transition-colors"
+          title="Save a copy as a new project"
+        >
+          <Copy size={12} />
+          Save As
+        </button>
+        {showSaveAs && (
+          <div className="absolute left-0 top-full mt-2 z-50 bg-[#1d1d22] border border-[#303039] rounded-xl shadow-2xl p-3.5 w-72">
+            <p className="text-xs font-medium text-ink-strong mb-2 flex items-center gap-1.5">
+              <Copy size={13} className="text-[#4d7cff]" /> Save as new project
+            </p>
+            <input
+              value={saveAsName}
+              onChange={(e) => setSaveAsName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleSaveAs();
+                if (e.key === 'Escape') setShowSaveAs(false);
+              }}
+              autoFocus
+              placeholder="Project name"
+              className="w-full bg-[#0c0c0f] text-xs text-ink-base rounded-lg px-2.5 py-2 border border-[#303039] focus:outline-none focus:border-[#4d7cff] placeholder:text-[#4a4a55]"
+            />
+            <p className="text-[10px] text-[#71717f] mt-1.5">
+              The current project stays saved under its old name.
+            </p>
+            <button
+              onClick={() => void handleSaveAs()}
+              disabled={savingAs || !saveAsName.trim()}
+              className="mt-2.5 w-full flex items-center justify-center gap-2 bg-[#4d7cff] hover:bg-[#3d6cf0] disabled:opacity-50 text-white text-xs font-medium rounded-lg py-2 transition-colors"
+            >
+              {savingAs ? (
+                <>
+                  <Loader2 size={12} className="animate-spin" /> Saving…
+                </>
+              ) : (
+                'Save As New Project'
+              )}
+            </button>
+          </div>
+        )}
+      </div>
 
       <div className="flex-1" />
 

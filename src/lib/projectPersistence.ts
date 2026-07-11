@@ -31,6 +31,16 @@ export async function saveCurrentProject(): Promise<boolean> {
   return false;
 }
 
+/**
+ * Save the current editor content as a NEW project under `name`. The
+ * previously saved project remains on disk; the editor switches to the copy.
+ */
+export async function saveProjectAs(name: string): Promise<boolean> {
+  if (!hasIpc()) return false;
+  useEditorStore.getState().forkProjectAs(name);
+  return saveCurrentProject();
+}
+
 export async function listProjects(): Promise<ProjectMeta[]> {
   if (!hasIpc()) return [];
   const result = (await ipc.invoke('aicuts:project-list')) as
