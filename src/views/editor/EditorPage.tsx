@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useCallback, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Film, Music, Type, Sparkles, Wand2, Link2 } from 'lucide-react';
-import { useEditorStore } from '@/store/editorStore';
+import { useEditorStore, findClipAt } from '@/store/editorStore';
 import { useAutosave, saveCurrentProject } from '@/lib/projectPersistence';
 import Toolbar from './Toolbar';
 import MediaPanel, { type PanelSection } from './MediaPanel';
@@ -18,8 +18,10 @@ const TOOLS: { id: PanelSection; label: string; icon: React.ElementType }[] = [
 ];
 
 const EditorPage: React.FC = () => {
-  const { isPlaying, playhead, duration, setPlayhead, setIsPlaying } =
-    useEditorStore();
+  // Subscribe to isPlaying ONLY — the playhead updates ~60x/sec during
+  // playback, and a full-store subscription here would re-render the entire
+  // editor tree every frame (the main cause of choppy playback).
+  const isPlaying = useEditorStore((s) => s.isPlaying);
   const animFrameRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number | null>(null);
   const [section, setSection] = useState<PanelSection>('media');
@@ -38,36 +40,38 @@ const EditorPage: React.FC = () => {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  // Playback engine
-  const tick = useCallback(
-    (now: number) => {
+  // Playback engine — advances the playhead only when NO video clip is under
+  // it (gaps, caption/audio-only regions). While a video clip is active, the
+  // <video> element in PreviewPlayer is the clock master and drives the
+  // playhead from its own currentTime; ticking here too would fight it and
+  // cause stutter. Reads state via getState() so this component never
+  // re-renders per frame.
+  useEffect(() => {
+    if (!isPlaying) return;
+    lastTimeRef.current = null;
+    const tick = (now: number) => {
+      const s = useEditorStore.getState();
+      if (!s.isPlaying) return;
       if (lastTimeRef.current == null) lastTimeRef.current = now;
       const delta = (now - lastTimeRef.current) / 1000;
       lastTimeRef.current = now;
-      const next = playhead + delta;
-      if (duration > 0 && next >= duration) {
-        setPlayhead(duration);
-        setIsPlaying(false);
-        return;
+      if (!findClipAt(s.tracks, 'video', s.playhead)) {
+        const next = s.playhead + delta;
+        if (s.duration > 0 && next >= s.duration) {
+          s.setPlayhead(s.duration);
+          s.setIsPlaying(false);
+          return;
+        }
+        s.setPlayhead(next);
       }
-      setPlayhead(next);
       animFrameRef.current = requestAnimationFrame(tick);
-    },
-    [playhead, duration, setPlayhead, setIsPlaying],
-  );
-
-  useEffect(() => {
-    if (isPlaying) {
-      lastTimeRef.current = null;
-      animFrameRef.current = requestAnimationFrame(tick);
-    } else {
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-      lastTimeRef.current = null;
-    }
+    };
+    animFrameRef.current = requestAnimationFrame(tick);
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      lastTimeRef.current = null;
     };
-  }, [isPlaying, tick]);
+  }, [isPlaying]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-[#0c0c0f]">

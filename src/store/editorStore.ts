@@ -113,6 +113,22 @@ export function clipEffectiveDuration(clip: Clip): number {
   return (clip.duration - clip.trimStart - clip.trimEnd) / (clip.speed ?? 1);
 }
 
+/** Clip of the given type under `time` on the timeline (speed-aware). */
+export function findClipAt(
+  tracks: Track[],
+  type: ClipType,
+  time: number,
+): { clip: Clip; track: Track } | null {
+  for (const track of tracks) {
+    if (track.type !== type) continue;
+    for (const clip of track.clips) {
+      const end = clip.startTime + clipEffectiveDuration(clip);
+      if (time >= clip.startTime && time < end) return { clip, track };
+    }
+  }
+  return null;
+}
+
 function calcDuration(tracks: Track[]): number {
   let max = 0;
   for (const track of tracks) {

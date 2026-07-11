@@ -22,23 +22,41 @@ import { saveCurrentProject } from '@/lib/projectPersistence';
 
 const RESOLUTIONS = ['1080p', '4k', '720p'] as const;
 
+/** Isolated so only this tiny node re-renders on 60fps playhead ticks. */
+const Timecode: React.FC = () => {
+  const playhead = useEditorStore((s) => s.playhead);
+  const duration = useEditorStore((s) => s.duration);
+  return (
+    <div className="font-mono text-xs text-[#9a9aa6] bg-[#0c0c0f] px-2.5 py-1.5 rounded-md min-w-[112px] text-center select-none tabular-nums border border-[#202027]">
+      <span className="text-ink-strong">{fmt(playhead)}</span>
+      <span className="text-[#4a4a55]"> / {fmt(duration)}</span>
+    </div>
+  );
+};
+
+function fmt(s: number) {
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  const ms = Math.floor((s % 1) * 10);
+  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${ms}`;
+}
+
 const Toolbar: React.FC = () => {
-  const {
-    isPlaying,
-    playhead,
-    duration,
-    setIsPlaying,
-    setPlayhead,
-    selectedClipId,
-    removeClip,
-    splitClip,
-    zoom,
-    setZoom,
-    exportProgress,
-    setExportProgress,
-    tracks,
-    saveState,
-  } = useEditorStore();
+  // Narrow selectors — no playhead subscription here (see Timecode); a
+  // full-store subscription would re-render the toolbar every frame.
+  const isPlaying = useEditorStore((s) => s.isPlaying);
+  const duration = useEditorStore((s) => s.duration);
+  const selectedClipId = useEditorStore((s) => s.selectedClipId);
+  const zoom = useEditorStore((s) => s.zoom);
+  const exportProgress = useEditorStore((s) => s.exportProgress);
+  const saveState = useEditorStore((s) => s.saveState);
+  const tracks = useEditorStore((s) => s.tracks);
+  const setIsPlaying = useEditorStore((s) => s.setIsPlaying);
+  const setPlayhead = useEditorStore((s) => s.setPlayhead);
+  const removeClip = useEditorStore((s) => s.removeClip);
+  const splitClip = useEditorStore((s) => s.splitClip);
+  const setZoom = useEditorStore((s) => s.setZoom);
+  const setExportProgress = useEditorStore((s) => s.setExportProgress);
 
   const [autoEditPrompt, setAutoEditPrompt] = useState('');
   const [showAutoEdit, setShowAutoEdit] = useState(false);
@@ -50,7 +68,7 @@ const Toolbar: React.FC = () => {
 
   const togglePlay = () => {
     if (duration === 0) return;
-    if (playhead >= duration) setPlayhead(0);
+    if (useEditorStore.getState().playhead >= duration) setPlayhead(0);
     setIsPlaying(!isPlaying);
   };
 
@@ -61,7 +79,7 @@ const Toolbar: React.FC = () => {
 
   const handleSplit = () => {
     if (!selectedClipId) return;
-    splitClip(selectedClipId, playhead);
+    splitClip(selectedClipId, useEditorStore.getState().playhead);
   };
 
   const handleDelete = () => {
@@ -70,7 +88,8 @@ const Toolbar: React.FC = () => {
   };
 
   const addCaption = () => {
-    const { addTrack, addClipToTrack, tracks: t } = useEditorStore.getState();
+    const state = useEditorStore.getState();
+    const { addTrack, addClipToTrack, tracks: t } = state;
     const captionTrack = t.find((tr) => tr.type === 'caption') ?? {
       id: addTrack('caption'),
     };
@@ -78,7 +97,7 @@ const Toolbar: React.FC = () => {
       src: '',
       name: 'Caption',
       duration: 3,
-      startTime: playhead,
+      startTime: state.playhead,
       trimStart: 0,
       trimEnd: 0,
       type: 'caption',
@@ -162,13 +181,6 @@ const Toolbar: React.FC = () => {
     setAutoEditPrompt('');
   };
 
-  const fmt = (s: number) => {
-    const m = Math.floor(s / 60);
-    const sec = Math.floor(s % 60);
-    const ms = Math.floor((s % 1) * 10);
-    return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${ms}`;
-  };
-
   return (
     <div className="flex items-center gap-1.5 px-3 h-12 bg-[#131316] border-b border-[#202027] shrink-0">
       {/* Transport */}
@@ -184,10 +196,7 @@ const Toolbar: React.FC = () => {
       </button>
 
       {/* Timecode */}
-      <div className="font-mono text-xs text-[#9a9aa6] bg-[#0c0c0f] px-2.5 py-1.5 rounded-md min-w-[112px] text-center select-none tabular-nums border border-[#202027]">
-        <span className="text-ink-strong">{fmt(playhead)}</span>
-        <span className="text-[#4a4a55]"> / {fmt(duration)}</span>
-      </div>
+      <Timecode />
 
       <div className="tb-sep" />
 

@@ -19,13 +19,25 @@ const TimelineRuler: React.FC<Props> = ({ duration, zoom, scrollLeft }) => {
   }, [duration, zoom]);
 
   return (
-    <div className="relative bg-[#131316] border-b border-[#202027] overflow-hidden select-none shrink-0" style={{ height: 28 }}>
-      <div className="absolute top-0 left-0 h-full" style={{ width: totalWidth, transform: `translateX(${-scrollLeft}px)` }}>
+    <div
+      className="relative bg-[#131316] border-b border-[#202027] overflow-hidden select-none shrink-0"
+      style={{ height: 28 }}
+    >
+      <div
+        className="absolute top-0 left-0 h-full"
+        style={{ width: totalWidth, transform: `translateX(${-scrollLeft}px)` }}
+      >
         {ticks.map(({ time, major }) => (
-          <div key={time} className="absolute top-0 flex flex-col items-start" style={{ left: time * zoom }}>
+          <div
+            key={time}
+            className="absolute top-0 flex flex-col items-start"
+            style={{ left: time * zoom }}
+          >
             {major ? (
               <>
-                <span className="text-[9px] text-[#71717f] mt-1 ml-1 leading-none tabular-nums">{fmt(time)}</span>
+                <span className="text-[9px] text-[#71717f] mt-1 ml-1 leading-none tabular-nums">
+                  {fmt(time)}
+                </span>
                 <div className="absolute top-0 left-0 w-px h-2 bg-[#3a3a44]" />
               </>
             ) : (

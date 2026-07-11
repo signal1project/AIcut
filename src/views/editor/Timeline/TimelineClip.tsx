@@ -22,9 +22,13 @@ const WAVE = Array.from(
 );
 
 const TimelineClip: React.FC<Props> = ({ clip, zoom, trackLocked }) => {
-  const { selectedClipId, selectClip, moveClip, trimClip, setPlayhead } =
-    useEditorStore();
-  const isSelected = selectedClipId === clip.id;
+  // Boolean selector re-renders only when THIS clip's selection flips;
+  // action selectors are stable refs — no re-renders from playhead ticks.
+  const isSelected = useEditorStore((s) => s.selectedClipId === clip.id);
+  const selectClip = useEditorStore((s) => s.selectClip);
+  const moveClip = useEditorStore((s) => s.moveClip);
+  const trimClip = useEditorStore((s) => s.trimClip);
+  const setPlayhead = useEditorStore((s) => s.setPlayhead);
   const dragRef = useRef<{ startX: number; startTime: number } | null>(null);
   const trimRef = useRef<{
     startX: number;

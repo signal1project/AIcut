@@ -1,5 +1,14 @@
 import React from 'react';
-import { Volume2, VolumeX, Lock, Unlock, Trash2, Film, Music, Type } from 'lucide-react';
+import {
+  Volume2,
+  VolumeX,
+  Lock,
+  Unlock,
+  Trash2,
+  Film,
+  Music,
+  Type,
+} from 'lucide-react';
 import { useEditorStore, type Track } from '@/store/editorStore';
 import TimelineClip from './TimelineClip';
 
@@ -13,10 +22,24 @@ interface Props {
 const TRACK_HEIGHT = 60;
 
 const TYPE_ICON = { video: Film, audio: Music, caption: Type } as const;
-const TYPE_DOT = { video: '#4d7cff', audio: '#22c55e', caption: '#e0a93a' } as const;
+const TYPE_DOT = {
+  video: '#4d7cff',
+  audio: '#22c55e',
+  caption: '#e0a93a',
+} as const;
 
-const TimelineTrack: React.FC<Props> = ({ track, zoom, totalWidth, labelWidth }) => {
-  const { toggleTrackMute, toggleTrackLock, removeTrack, setPlayhead } = useEditorStore();
+const TimelineTrack: React.FC<Props> = ({
+  track,
+  zoom,
+  totalWidth,
+  labelWidth,
+}) => {
+  // Individual action selectors: actions are stable refs, so this component
+  // never re-renders from store churn (e.g. 60fps playhead updates).
+  const toggleTrackMute = useEditorStore((s) => s.toggleTrackMute);
+  const toggleTrackLock = useEditorStore((s) => s.toggleTrackLock);
+  const removeTrack = useEditorStore((s) => s.removeTrack);
+  const setPlayhead = useEditorStore((s) => s.setPlayhead);
   const Icon = TYPE_ICON[track.type];
   const dot = TYPE_DOT[track.type];
 
@@ -34,10 +57,15 @@ const TimelineTrack: React.FC<Props> = ({ track, zoom, totalWidth, labelWidth })
         className="relative shrink-0 flex items-center gap-2 px-3 bg-[#131316] border-b border-r border-[#202027]"
         style={{ width: labelWidth }}
       >
-        <span className="flex items-center justify-center w-5 h-5 rounded shrink-0" style={{ color: dot }}>
+        <span
+          className="flex items-center justify-center w-5 h-5 rounded shrink-0"
+          style={{ color: dot }}
+        >
           <Icon size={13} />
         </span>
-        <span className="text-[11px] text-[#b8b8c2] truncate flex-1 font-medium">{track.label}</span>
+        <span className="text-[11px] text-[#b8b8c2] truncate flex-1 font-medium">
+          {track.label}
+        </span>
         {/* Controls overlay — appear on hover without consuming label width */}
         <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5 pl-3 pr-0.5 bg-gradient-to-l from-[#131316] via-[#131316] to-transparent opacity-0 group-hover/track:opacity-100 transition-opacity">
           <button
@@ -71,7 +99,12 @@ const TimelineTrack: React.FC<Props> = ({ track, zoom, totalWidth, labelWidth })
         onClick={handleTrackClick}
       >
         {track.clips.map((clip) => (
-          <TimelineClip key={clip.id} clip={clip} zoom={zoom} trackLocked={!!track.locked} />
+          <TimelineClip
+            key={clip.id}
+            clip={clip}
+            zoom={zoom}
+            trackLocked={!!track.locked}
+          />
         ))}
       </div>
     </div>

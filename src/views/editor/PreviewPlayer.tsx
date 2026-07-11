@@ -1,23 +1,16 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Play, Pause, Volume2, VolumeX, Maximize2 } from 'lucide-react';
-import { useEditorStore, type Clip, type Track } from '@/store/editorStore';
+import {
+  useEditorStore,
+  findClipAt,
+  clipEffectiveDuration,
+  type Clip,
+} from '@/store/editorStore';
 import { toMediaUrl } from '@/lib/media';
 
-function findActiveClip(
-  tracks: Track[],
-  type: 'video' | 'audio',
-  playhead: number,
-): { clip: Clip; track: Track } | null {
-  for (const track of tracks) {
-    if (track.type !== type) continue;
-    for (const clip of track.clips) {
-      const clipStart = clip.startTime;
-      const clipEnd =
-        clip.startTime + (clip.duration - clip.trimStart - clip.trimEnd);
-      if (playhead >= clipStart && playhead < clipEnd) return { clip, track };
-    }
-  }
-  return null;
+/** Timeline seconds → source-file seconds for a clip (speed-aware). */
+function toClipTime(clip: Clip, timelineTime: number): number {
+  return clip.trimStart + (timelineTime - clip.startTime) * (clip.speed ?? 1);
 }
 
 const PreviewPlayer: React.FC = () => {
@@ -29,12 +22,12 @@ const PreviewPlayer: React.FC = () => {
   const [currentSrc, setCurrentSrc] = useState<string | null>(null);
 
   // Find the video clip that should be playing at the current playhead
-  const activeVideo = findActiveClip(tracks, 'video', playhead);
+  const activeVideo = findClipAt(tracks, 'video', playhead);
   const activeClip = activeVideo?.clip ?? null;
   const videoTrackMuted = !!activeVideo?.track.muted;
 
   // Active audio-track clip (music/voiceover laid on the audio track)
-  const activeAudio = findActiveClip(tracks, 'audio', playhead);
+  const activeAudio = findClipAt(tracks, 'audio', playhead);
   const audioClip =
     activeAudio && !activeAudio.track.muted ? activeAudio.clip : null;
   const audioSrc = audioClip
@@ -42,18 +35,8 @@ const PreviewPlayer: React.FC = () => {
     : null;
 
   // Active caption at playhead
-  const activeCaption = (() => {
-    for (const track of tracks) {
-      if (track.type !== 'caption') continue;
-      for (const clip of track.clips) {
-        const end =
-          clip.startTime + (clip.duration - clip.trimStart - clip.trimEnd);
-        if (playhead >= clip.startTime && playhead < end)
-          return clip.captionText;
-      }
-    }
-    return null;
-  })();
+  const activeCaption = findClipAt(tracks, 'caption', playhead)?.clip
+    .captionText;
 
   useEffect(() => {
     if (!activeClip) {
@@ -64,24 +47,74 @@ const PreviewPlayer: React.FC = () => {
     if (newSrc !== currentSrc) setCurrentSrc(newSrc);
   }, [activeClip?.id]);
 
+  // Position the video on scrub/clip-change. While playing, the video element
+  // is the clock master (effect below) — seeking it here every frame would
+  // cause constant decoder hitches, so only genuine jumps (drift beyond what
+  // playback itself produces) trigger a seek.
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !activeClip || !currentSrc) return;
-    const clipTime = activeClip.trimStart + (playhead - activeClip.startTime);
-    if (Math.abs(video.currentTime - clipTime) > 0.15) {
+    const clipTime = toClipTime(activeClip, playhead);
+    const threshold = isPlaying ? 0.4 : 0.05;
+    if (Math.abs(video.currentTime - clipTime) > threshold) {
       video.currentTime = clipTime;
     }
-  }, [playhead, activeClip, currentSrc]);
+  }, [playhead, activeClip, currentSrc, isPlaying]);
+
+  // Honor per-clip speed in preview (matches export timing)
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video) video.playbackRate = activeClip?.speed ?? 1;
+  }, [activeClip?.speed, currentSrc]);
+
+  // CLOCK MASTER — while a video clip plays, drive the timeline playhead from
+  // the video element's own clock instead of an external rAF accumulator.
+  // Two independent clocks drift, and correcting drift means seeking the
+  // video mid-playback = visible stutter. One clock, no fights.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!isPlaying || !video || !activeClip || !currentSrc) return;
+    let raf: number;
+    const speed = activeClip.speed ?? 1;
+    const clipEnd = activeClip.startTime + clipEffectiveDuration(activeClip);
+    const loop = () => {
+      const s = useEditorStore.getState();
+      if (!s.isPlaying) return;
+      const t =
+        activeClip.startTime +
+        (video.currentTime - activeClip.trimStart) / speed;
+      if (t >= clipEnd - 0.017 || video.ended) {
+        // Hand off: past this clip's trimmed end. Nudge the playhead to the
+        // boundary so the next clip (or the gap ticker) takes over.
+        if (s.duration > 0 && clipEnd >= s.duration - 0.017) {
+          s.setPlayhead(s.duration);
+          s.setIsPlaying(false);
+        } else {
+          s.setPlayhead(clipEnd);
+        }
+        return;
+      }
+      // Monotonic: never yank the playhead backwards while the video buffers.
+      if (t > s.playhead) s.setPlayhead(t);
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [isPlaying, activeClip, currentSrc]);
 
   // Keep the audio-track element in sync with the playhead
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !audioClip) return;
-    const clipTime = audioClip.trimStart + (playhead - audioClip.startTime);
-    if (Math.abs(audio.currentTime - clipTime) > 0.15) {
+    audio.playbackRate = audioClip.speed ?? 1;
+    const clipTime = toClipTime(audioClip, playhead);
+    // Loose threshold while playing: audio runs on its own real-time clock,
+    // constant micro-seeks are audible clicks.
+    const threshold = isPlaying ? 0.3 : 0.05;
+    if (Math.abs(audio.currentTime - clipTime) > threshold) {
       audio.currentTime = clipTime;
     }
-  }, [playhead, audioClip]);
+  }, [playhead, audioClip, isPlaying]);
 
   useEffect(() => {
     const video = videoRef.current;

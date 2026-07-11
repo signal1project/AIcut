@@ -40,14 +40,14 @@ interface Props {
 }
 
 const MediaPanel: React.FC<Props> = ({ section }) => {
-  const {
-    mediaLibrary,
-    addMediaItem,
-    addClipToTrack,
-    tracks,
-    addTrack,
-    playhead,
-  } = useEditorStore();
+  // Narrow selectors — a full-store subscription would re-render this whole
+  // panel on every 60fps playhead tick during playback. The playhead itself
+  // is read via getState() at click time in addCaption.
+  const mediaLibrary = useEditorStore((s) => s.mediaLibrary);
+  const tracks = useEditorStore((s) => s.tracks);
+  const addMediaItem = useEditorStore((s) => s.addMediaItem);
+  const addClipToTrack = useEditorStore((s) => s.addClipToTrack);
+  const addTrack = useEditorStore((s) => s.addTrack);
   const [importing, setImporting] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [captionsBusy, setCaptionsBusy] = useState(false);
@@ -131,7 +131,7 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
       src: '',
       name: 'Caption',
       duration: 3,
-      startTime: playhead,
+      startTime: useEditorStore.getState().playhead,
       trimStart: 0,
       trimEnd: 0,
       type: 'caption',
