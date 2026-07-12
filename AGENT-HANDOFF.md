@@ -1,8 +1,65 @@
 # AICut — Agent Handoff
 
-**Updated:** 2026-07-07 (Mick / ClaudeClaw) — v0.6
-**Status:** ✅ 235 tests pass · tsc clean · vite build clean · v0.6 pushed to `main` (`f6c625b`)
+**Updated:** 2026-07-12 (Mick / ClaudeClaw) — v1.0 production build
+**Status:** ✅ 297 tests pass · tsc clean · vite build clean · pushed to `main`
 **Read this FIRST before touching the repo.**
+
+---
+
+## v1.0 — What changed (2026-07-11/12 production sprint)
+
+Full CapCut-parity editor + production social pipeline, built in one sprint
+(commits `8bb7442` → HEAD). Highlights per subsystem:
+
+**Export engine v2** (`electron/main/aicuts/exportGraph.ts` — pure, unit-tested):
+- ONE ffmpeg `filter_complex` graph replaces trim-and-concat. Timeline gaps render
+  black+silence (caption/music timing exact); audio-track clips mix in via `adelay`
+  on the compressed timeline; per-clip volume/speed/fades honored.
+- Transitions: xfade + acrossfade (fade/wipes/slide/circle). Transitions compress the
+  timeline — `compressTime()` maps caption/music/overlay times.
+- Aspect presets 16:9 / 9:16 / 1:1 / 4:5 × 720p/1080p/4K. Styled ASS caption burn-in.
+- Overlay tracks (video tracks 2+ and images) composite via `overlay=`; chroma key,
+  eq color adjustments, zoompan motion presets all in-graph.
+- **ffmpeg binary = ffmpeg-static 6.1.1** via `electron/util/ffmpegBinary.ts`
+  (the old @ffmpeg-installer binary is a 2018 build without xfade — fallback only).
+
+**Editor**: real undo/redo (drag-coalesced history in editorStore), caption styling
+(size/color/bold/position/box), image imports + overlay placement controls, color
+presets + sliders, green screen, motion presets, real waveforms
+(`aicuts:audio-peaks`, cached in userData/waveforms), Whisper one-click captions
+(`aicuts:transcribe-video`, needs OpenAI key), SAPI Voice Studio (`aicuts:tts`,
+keyless), volume applied in preview, per-clip speed in preview.
+
+**Media pipeline**: `aicut-media://` protocol (webSecurity-safe, Range-supporting);
+preview proxies for HEVC/odd containers (userData/preview-proxies); projects
+autosave to userData/projects with Save/Save As/Recent Projects.
+
+**Production social pipeline:**
+- **Share button** (editor toolbar) → silent export to userData/shares → post to
+  signed-in webview platforms and/or API accounts, optional scheduling.
+- **Webview posting** (`adapters/webviewBridge.ts`): CDP `DOM.setFileInputFiles`
+  attaches the exported video (pierces iframes/shadow DOM), fill scripts type
+  captions, auto-submit on X/LinkedIn; other platforms attach+fill and leave the
+  window for one review click. Caption always copied to clipboard.
+- **API video upload** (`adapters/videoUpload.ts`): X v2 chunked upload, FB page
+  video multipart, IG Reels resumable upload, Pinterest media→pin. Threads API
+  needs a public URL (error message points at the webview path). Local-path media
+  routes to byte upload; http(s) URLs keep server-side fetch.
+- **Reliability**: close-to-tray (default ON) + launch-at-login (Settings → App
+  Behavior); scheduled posts REHYDRATE at boot and missed ones catch up
+  (`mas/scheduledFiring.ts` — also fixed rows never leaving QUEUED = double-post
+  bug); desktop Notifications on scheduled-post outcomes; schedule requests
+  without a content asset auto-persist one.
+
+**AI providers**: ChatGPT sign-in (Codex device-code OAuth, gpt-5.5, no key) +
+OpenRouter OAuth + Ollama + API keys (Claude/OpenAI/Groq). Full management on
+`/mas/settings` (also: multi-company brand profiles, App Behavior, integrations).
+
+**Dale-side actions still required for the API posting half:**
+1. Register developer apps: Meta (FB+IG+Threads — app review for publish perms
+   takes weeks; start first), X (media.write scope), Pinterest, TikTok, YouTube.
+2. Paste client IDs into ConnectAccounts (Advanced/API) per platform.
+3. Until then: webview posting works with plain sign-ins TODAY.
 
 ---
 
