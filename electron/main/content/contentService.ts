@@ -66,6 +66,8 @@ export function buildAlgorithmAwareBrief(brief: string, algorithmHint: string): 
 /** Append brand-kit constraints to a brief. Exported for tests. */
 export function buildBrandAwareBrief(brief: string, kit: BrandKit): string {
   const lines: string[] = [];
+  if (kit.brandName) lines.push(`- Brand/company: ${kit.brandName}`);
+  if (kit.bio) lines.push(`- Brand bio and business context: ${kit.bio}`);
   if (kit.voice) lines.push(`- Brand voice: ${kit.voice}`);
   if (kit.audience) lines.push(`- Target audience: ${kit.audience}`);
   if (kit.hashtags.length) lines.push(`- Prefer these hashtags: ${kit.hashtags.join(' ')}`);

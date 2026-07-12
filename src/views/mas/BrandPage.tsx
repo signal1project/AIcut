@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Palette, Save, Globe, ExternalLink } from 'lucide-react';
+import { Palette, Save, Globe, ExternalLink, Plus, Trash2, Building2 } from 'lucide-react';
 import { useMasApi } from './useMasApi';
 import { ipc, hasIpc } from '@/lib/ipc';
 import {
@@ -12,6 +12,9 @@ import {
 } from '@/components/ui';
 
 interface BrandKitForm {
+  id: string;
+  name: string;
+  bio: string;
   voice: string;
   audience: string;
   hashtags: string;
@@ -19,7 +22,10 @@ interface BrandKitForm {
   signature: string;
 }
 
-const EMPTY: BrandKitForm = { voice: '', audience: '', hashtags: '', bannedWords: '', signature: '' };
+const emptyBrand = (): BrandKitForm => ({
+  id: crypto.randomUUID(), name: '', bio: '', voice: '', audience: '',
+  hashtags: '', bannedWords: '', signature: '',
+});
 
 /**
  * Brand page: (1) Brand Kit — persistent voice/audience/hashtag rules injected
@@ -28,45 +34,75 @@ const EMPTY: BrandKitForm = { voice: '', audience: '', hashtags: '', bannedWords
  */
 export default function BrandPage(): React.ReactElement {
   const api = useMasApi();
-  const [kit, setKit] = useState<BrandKitForm>(EMPTY);
+  const [brands, setBrands] = useState<BrandKitForm[]>([]);
+  const [selectedId, setSelectedId] = useState('');
+  const kit = brands.find((brand) => brand.id === selectedId) ?? null;
   const [savingKit, setSavingKit] = useState(false);
 
   useEffect(() => {
     if (!hasIpc()) return;
     ipc
-      .invoke('mas:settings:get-brand-kit')
+      .invoke('mas:brands:list')
       .then((raw) => {
-        const k = raw as { voice: string; audience: string; hashtags: string[]; bannedWords: string[]; signature: string } | null;
-        if (k) {
-          setKit({
+        const profiles = raw as Array<{ id: string; name: string; bio: string; voice: string; audience: string; hashtags: string[]; bannedWords: string[]; signature: string }>;
+        const forms = profiles.map((k) => ({
+            id: k.id, name: k.name, bio: k.bio ?? '',
             voice: k.voice,
             audience: k.audience,
             hashtags: k.hashtags.join(' '),
             bannedWords: k.bannedWords.join(', '),
             signature: k.signature,
-          });
-        }
+          }));
+        setBrands(forms);
+        if (forms[0]) setSelectedId(forms[0].id);
       })
       .catch(() => {});
   }, []);
 
   const saveKit = async () => {
-    if (!hasIpc()) return;
+    if (!hasIpc() || !kit || !kit.name.trim()) {
+      toast.error('Enter a company name first');
+      return;
+    }
     setSavingKit(true);
     try {
-      await ipc.invoke('mas:settings:set-brand-kit', {
+      await ipc.invoke('mas:brands:save', {
+        id: kit.id,
+        name: kit.name.trim(),
+        bio: kit.bio.trim(),
         voice: kit.voice.trim(),
         audience: kit.audience.trim(),
         hashtags: kit.hashtags.split(/\s+/).filter(Boolean),
         bannedWords: kit.bannedWords.split(',').map((w) => w.trim()).filter(Boolean),
         signature: kit.signature.trim(),
       });
-      toast.success('Brand kit saved — every AI generation now follows it');
+      toast.success(`${kit.name.trim()} saved`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Save failed');
     } finally {
       setSavingKit(false);
     }
+  };
+
+  const updateKit = (changes: Partial<BrandKitForm>) => {
+    setBrands((current) => current.map((brand) =>
+      brand.id === selectedId ? { ...brand, ...changes } : brand,
+    ));
+  };
+
+  const addBrand = () => {
+    const brand = emptyBrand();
+    setBrands((current) => [...current, brand]);
+    setSelectedId(brand.id);
+  };
+
+  const deleteBrand = async () => {
+    if (!kit || !hasIpc()) return;
+    await ipc.invoke('mas:brands:delete', kit.id);
+    const remaining = brands.filter((brand) => brand.id !== kit.id);
+    setBrands(remaining);
+    setSelectedId(remaining[0]?.id ?? '');
+    toast.success(`${kit.name || 'Company'} removed`);
   };
 
   // ── Bio page ────────────────────────────────────────────────────────────────
@@ -115,26 +151,51 @@ export default function BrandPage(): React.ReactElement {
           Brand
         </h2>
         <p className="text-sm text-ink-muted mt-0.5">
-          Your voice, rules, and link-in-bio page — applied across everything AICut generates.
+          Save a separate bio, voice, and content rules for every company you manage.
         </p>
       </div>
 
+      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        {brands.map((brand) => (
+          <button
+            key={brand.id}
+            onClick={() => setSelectedId(brand.id)}
+            className={`shrink-0 flex items-center gap-2 rounded-md border px-3 py-2 text-xs transition-colors ${selectedId === brand.id ? 'border-accent bg-accent/10 text-ink-strong' : 'border-border text-ink-muted hover:text-ink-strong'}`}
+          >
+            <Building2 size={13} /> {brand.name || 'New company'}
+          </button>
+        ))}
+        <Button variant="secondary" size="sm" onClick={addBrand}>
+          <Plus size={13} /> Add Company
+        </Button>
+      </div>
+
       {/* Brand kit */}
+      {kit && (
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Brand Kit</CardTitle>
+          <CardTitle className="text-sm">Company Brand Profile</CardTitle>
           <CardDescription>
             These rules are appended to every AI content brief (posts, carousels, listing ads).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="space-y-1.5">
+            <Label htmlFor="companyName">Company / brand name</Label>
+            <Input id="companyName" placeholder="Signal 1 Realty" value={kit.name} onChange={(e) => updateKit({ name: e.target.value })} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="brandBio">Brand bio</Label>
+            <Textarea id="brandBio" rows={5} placeholder="Describe the company, what it does, where it serves, its values, and what makes it different..." value={kit.bio} onChange={(e) => updateKit({ bio: e.target.value })} />
+            <p className="text-[11px] text-ink-muted">Saved with this company so posts and ads can use the correct business context.</p>
+          </div>
+          <div className="space-y-1.5">
             <Label htmlFor="voice">Voice &amp; tone</Label>
             <Input
               id="voice"
               placeholder="confident, warm, zero hype"
               value={kit.voice}
-              onChange={(e) => setKit({ ...kit, voice: e.target.value })}
+              onChange={(e) => updateKit({ voice: e.target.value })}
             />
           </div>
           <div className="space-y-1.5">
@@ -143,7 +204,7 @@ export default function BrandPage(): React.ReactElement {
               id="audience"
               placeholder="first-time homebuyers in Houston"
               value={kit.audience}
-              onChange={(e) => setKit({ ...kit, audience: e.target.value })}
+              onChange={(e) => updateKit({ audience: e.target.value })}
             />
           </div>
           <div className="space-y-1.5">
@@ -152,7 +213,7 @@ export default function BrandPage(): React.ReactElement {
               id="bhashtags"
               placeholder="#HoustonHomes #YourBrand"
               value={kit.hashtags}
-              onChange={(e) => setKit({ ...kit, hashtags: e.target.value })}
+              onChange={(e) => updateKit({ hashtags: e.target.value })}
             />
           </div>
           <div className="space-y-1.5">
@@ -161,7 +222,7 @@ export default function BrandPage(): React.ReactElement {
               id="banned"
               placeholder="cheap, guaranteed, once-in-a-lifetime"
               value={kit.bannedWords}
-              onChange={(e) => setKit({ ...kit, bannedWords: e.target.value })}
+              onChange={(e) => updateKit({ bannedWords: e.target.value })}
             />
           </div>
           <div className="space-y-1.5">
@@ -170,15 +231,24 @@ export default function BrandPage(): React.ReactElement {
               id="signature"
               placeholder="DM 'HOME' for a free buyer consult"
               value={kit.signature}
-              onChange={(e) => setKit({ ...kit, signature: e.target.value })}
+              onChange={(e) => updateKit({ signature: e.target.value })}
             />
           </div>
-          <Button onClick={() => void saveKit()} loading={savingKit} disabled={!hasIpc()}>
-            <Save size={14} />
-            Save Brand Kit
-          </Button>
+          <div className="flex items-center justify-between">
+            <Button onClick={() => void saveKit()} loading={savingKit} disabled={!hasIpc()}>
+              <Save size={14} /> Save Company
+            </Button>
+            <Button variant="ghost" onClick={() => void deleteBrand()} className="text-danger hover:text-danger">
+              <Trash2 size={14} /> Remove Company
+            </Button>
+          </div>
         </CardContent>
       </Card>
+      )}
+
+      {!kit && (
+        <Card><CardContent className="py-8 text-center text-sm text-ink-muted">Add your first company to create its brand bio and content rules.</CardContent></Card>
+      )}
 
       {/* Bio page generator */}
       <Card>

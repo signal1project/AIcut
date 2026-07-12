@@ -11,6 +11,21 @@ beforeEach(() => {
   settings = new Settings(mapStore());
 });
 
+describe('Settings — company brand profiles', () => {
+  it('persists multiple companies and platform assignments', () => {
+    settings.setBrandProfiles([
+      { id: 'one', name: 'Company One', bio: 'First bio', voice: 'warm', audience: 'buyers', hashtags: [], bannedWords: [], signature: '' },
+      { id: 'two', name: 'Company Two', bio: 'Second bio', voice: 'direct', audience: 'sellers', hashtags: ['#Two'], bannedWords: [], signature: 'Call us' },
+    ]);
+    settings.setPlatformBrandAssignment('facebook', 'two');
+
+    expect(settings.getBrandProfiles()).toHaveLength(2);
+    expect(settings.getBrandProfiles()[1].bio).toBe('Second bio');
+    expect(settings.getPlatformBrandAssignments().facebook).toBe('two');
+    expect(settings.getBrandKit()).toMatchObject({ brandName: 'Company One', bio: 'First bio' });
+  });
+});
+
 describe('Settings — platform OAuth', () => {
   it('returns null until configured', () => {
     expect(settings.getPlatformOAuth('facebook')).toBeNull();

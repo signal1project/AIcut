@@ -93,7 +93,22 @@ export const LayoutBody = () => {
             </>
           )}
         </div>
-        <WindowControlButtons />
+        <div className="no-drag flex items-center h-full">
+          <button
+            onClick={() => navigate('/mas/settings')}
+            className={`flex items-center gap-1.5 h-7 px-2.5 mr-1 rounded text-xs font-medium transition-colors ${
+              location.pathname === '/mas/settings'
+                ? 'bg-[#1d2540] text-[#8aa9ff]'
+                : 'text-[#858592] hover:bg-[#1d1d22] hover:text-[#d5d5dc]'
+            }`}
+            title="Open Settings"
+            aria-label="Open Settings"
+          >
+            <Settings size={14} strokeWidth={1.8} />
+            <span>Settings</span>
+          </button>
+          <WindowControlButtons />
+        </div>
       </header>
       <div className="flex flex-1 overflow-hidden">
         {inSocial && (

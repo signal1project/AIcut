@@ -4,6 +4,8 @@ import { ContentService, buildBrandAwareBrief, parseCarouselResponse } from '../
 import type { BrandKit } from '../../settings/settings';
 
 const kit: BrandKit = {
+  brandName: 'Signal Realty',
+  bio: 'A local brokerage serving Houston families.',
   voice: 'warm, confident',
   audience: 'first-time buyers',
   hashtags: ['#HoustonHomes'],
@@ -23,6 +25,8 @@ describe('buildBrandAwareBrief', () => {
   it('appends all brand rules', () => {
     const brief = buildBrandAwareBrief('post about spring market', kit);
     expect(brief).toContain('Brand voice: warm, confident');
+    expect(brief).toContain('Brand/company: Signal Realty');
+    expect(brief).toContain('local brokerage serving Houston');
     expect(brief).toContain('first-time buyers');
     expect(brief).toContain('#HoustonHomes');
     expect(brief).toContain('NEVER use these words/phrases: cheap, guaranteed');

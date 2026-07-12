@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import {
   X, Check, ChevronRight, ExternalLink, Loader2, Link2,
   Copy, ChevronDown, ChevronUp, AlertCircle, LogIn, LogOut,
+  Building2,
 } from 'lucide-react';
 import { PLATFORMS, PLATFORM_CONFIG, type Platform } from '@mas/types';
 import { ipc, hasIpc } from '@/lib/ipc';
@@ -179,6 +180,11 @@ const ConnectAccounts: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     () => Object.fromEntries(PLATFORMS.map((p) => [p, blankState()])),
   );
   const [copied, setCopied] = useState(false);
+  const [brands, setBrands] = useState<Array<{ id: string; name: string }>>([]);
+  const [platformBrands, setPlatformBrands] = useState<Record<string, string>>({});
+  const [businessAccounts, setBusinessAccounts] = useState<Array<{
+    id: string; platform: Platform; accountName: string; externalId: string; brandId: string | null;
+  }>>([]);
 
   const patch = (p: Platform, d: Partial<PlatformState>) =>
     setStates((s) => ({ ...s, [p]: { ...s[p], ...d } }));
@@ -196,7 +202,30 @@ const ConnectAccounts: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         patch(p, { checking: false });
       }
     });
+    Promise.all([
+      ipc.invoke('mas:brands:list'),
+      ipc.invoke('mas:brands:platform-assignments'),
+      ipc.invoke('mas:accounts:list'),
+    ]).then(([brandList, assignments, accounts]) => {
+      setBrands(brandList as Array<{ id: string; name: string }>);
+      setPlatformBrands((assignments ?? {}) as Record<string, string>);
+      setBusinessAccounts(accounts as typeof businessAccounts);
+    }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const assignPlatformBrand = async (platform: Platform, brandId: string) => {
+    setPlatformBrands((current) => ({ ...current, [platform]: brandId }));
+    await ipc.invoke('mas:brands:assign-platform', platform, brandId || null);
+    toast.success(`Brand assignment saved for ${PLATFORM_CONFIG[platform].label}`);
+  };
+
+  const assignAccountBrand = async (accountId: string, brandId: string) => {
+    setBusinessAccounts((current) => current.map((account) =>
+      account.id === accountId ? { ...account, brandId: brandId || null } : account,
+    ));
+    await ipc.invoke('mas:accounts:assign-brand', accountId, brandId || null);
+    toast.success('Business page brand assignment saved');
+  };
 
   const signIn = async (p: Platform) => {
     if (!hasIpc()) { toast.error('Requires the desktop app'); return; }
@@ -251,7 +280,10 @@ const ConnectAccounts: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       await ipc.invoke('mas:oauth:complete', {
         platform: p, redirectUrl: s.redirectUrl, expectedState: s.authState,
         codeVerifier: s.codeVerifier, accountName: s.accountName, externalId: s.externalId,
+        brandId: platformBrands[p] || null,
       });
+      const refreshed = await ipc.invoke('mas:accounts:list');
+      setBusinessAccounts(refreshed as typeof businessAccounts);
       patch(p, { oauthBusy: false, loggedIn: true, showAdvanced: false, oauthStage: 'idle' });
       toast.success(`✓ Connected: ${s.accountName}`);
     } catch (e) {
@@ -293,6 +325,35 @@ const ConnectAccounts: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
         {/* Platform list */}
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {businessAccounts.length > 0 && (
+            <div className="rounded-xl border border-[#2a3560] bg-[#151927] p-3 mb-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Building2 size={14} className="text-[#7ba0ff]" />
+                <div>
+                  <p className="text-xs font-semibold text-ink-strong">Connected Business Pages</p>
+                  <p className="text-[10px] text-ink-muted">Choose which saved company owns each page or account.</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {businessAccounts.map((account) => (
+                  <div key={account.id} className="flex items-center gap-3 rounded-md bg-[#0f111b] px-3 py-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-ink-strong truncate">{account.accountName}</p>
+                      <p className="text-[10px] text-ink-muted capitalize">{account.platform} · {account.externalId}</p>
+                    </div>
+                    <select
+                      value={account.brandId ?? ''}
+                      onChange={(e) => void assignAccountBrand(account.id, e.target.value)}
+                      className="w-44 bg-[#171923] border border-[#303443] rounded-md px-2 py-1.5 text-[11px] text-ink-strong focus:outline-none focus:border-[#4d7cff]"
+                    >
+                      <option value="">Choose company…</option>
+                      {brands.map((brand) => <option key={brand.id} value={brand.id}>{brand.name}</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {PLATFORMS.map((p) => {
             const cfg = PLATFORM_CONFIG[p];
             const guide = GUIDES[p];
@@ -315,6 +376,18 @@ const ConnectAccounts: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                       {s.checking ? 'Checking session…' : s.loggedIn ? '✓ Signed in' : 'Not connected'}
                     </p>
                   </div>
+
+                  {s.loggedIn && (
+                    <select
+                      value={platformBrands[p] ?? ''}
+                      onChange={(e) => void assignPlatformBrand(p, e.target.value)}
+                      className="w-36 bg-[#101013] border border-[#303039] rounded-md px-2 py-1.5 text-[10px] text-ink-strong focus:outline-none focus:border-[#4d7cff]"
+                      title={`Company represented by this ${cfg.label} session`}
+                    >
+                      <option value="">Choose company…</option>
+                      {brands.map((brand) => <option key={brand.id} value={brand.id}>{brand.name}</option>)}
+                    </select>
+                  )}
 
                   <div className="flex items-center gap-1.5">
                     {s.loggedIn ? (
@@ -424,6 +497,14 @@ const ConnectAccounts: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                           <input className={inputCls} placeholder="Account name" value={s.accountName} onChange={(e) => patch(p, { accountName: e.target.value })} />
                           <input className={inputCls} placeholder="Account / page ID" value={s.externalId} onChange={(e) => patch(p, { externalId: e.target.value })} />
                         </div>
+                        <select
+                          value={platformBrands[p] ?? ''}
+                          onChange={(e) => setPlatformBrands((current) => ({ ...current, [p]: e.target.value }))}
+                          className={inputCls}
+                        >
+                          <option value="">Choose company for this page…</option>
+                          {brands.map((brand) => <option key={brand.id} value={brand.id}>{brand.name}</option>)}
+                        </select>
                         <button onClick={() => void completeOAuth(p)} disabled={s.oauthBusy} className="w-full flex items-center justify-center gap-2 bg-[#22c55e] hover:bg-[#1faa52] disabled:opacity-50 text-[#06210f] text-xs font-semibold rounded-md py-2 transition-colors">
                           {s.oauthBusy ? <Loader2 size={12} className="animate-spin" /> : <>Finish connecting <Check size={13} /></>}
                         </button>

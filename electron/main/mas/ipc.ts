@@ -13,6 +13,7 @@ import { CredentialManager } from '../credentials/credentialManager';
 import { createOAuthService } from '../oauth';
 import type { OAuthClientConfig } from '../oauth/oauthService';
 import { Settings } from '../settings/settings';
+import type { BrandProfile } from '../settings/settings';
 import {
   runOpenRouterOAuthFlow,
   openOllamaInstallPage,
@@ -75,6 +76,37 @@ export function registerMasIpc(deps: MasIpcDeps): void {
   // ── Brand kit ──────────────────────────────────────────────────────────────
 
   ipcMain.handle('mas:settings:get-brand-kit', () => settings.getBrandKit());
+
+  ipcMain.handle('mas:brands:list', () => settings.getBrandProfiles());
+
+  ipcMain.handle('mas:brands:save', (_e, profile: BrandProfile) => {
+    const profiles = settings.getBrandProfiles();
+    const index = profiles.findIndex((item) => item.id === profile.id);
+    if (index >= 0) profiles[index] = profile;
+    else profiles.push(profile);
+    settings.setBrandProfiles(profiles);
+    return profiles;
+  });
+
+  ipcMain.handle('mas:brands:delete', (_e, brandId: string) => {
+    const profiles = settings
+      .getBrandProfiles()
+      .filter((item) => item.id !== brandId);
+    settings.setBrandProfiles(profiles);
+    return profiles;
+  });
+
+  ipcMain.handle('mas:brands:platform-assignments', () =>
+    settings.getPlatformBrandAssignments(),
+  );
+
+  ipcMain.handle(
+    'mas:brands:assign-platform',
+    (_e, platform: Platform, brandId: string | null) => {
+      settings.setPlatformBrandAssignment(platform, brandId);
+      return { ok: true };
+    },
+  );
 
   ipcMain.handle(
     'mas:settings:set-brand-kit',
@@ -212,8 +244,22 @@ export function registerMasIpc(deps: MasIpcDeps): void {
       accountName: a.accountName,
       externalId: a.externalId,
       status: a.status,
+      brandId:
+        typeof a.metadata?.brandId === 'string' ? a.metadata.brandId : null,
     }));
   });
+
+  ipcMain.handle(
+    'mas:accounts:assign-brand',
+    async (_e, accountId: string, brandId: string | null) => {
+      const repo = dataSource.getRepository(ConnectedAccountModel);
+      const account = await repo.findOneByOrFail({ id: accountId });
+      account.metadata = { ...account.metadata, brandId };
+      if (!brandId) delete account.metadata.brandId;
+      await repo.save(account);
+      return { ok: true };
+    },
+  );
 
   ipcMain.handle(
     'mas:oauth:complete',
@@ -226,6 +272,7 @@ export function registerMasIpc(deps: MasIpcDeps): void {
         codeVerifier?: string;
         accountName: string;
         externalId: string;
+        brandId?: string | null;
       },
     ) => {
       const config = settings.getPlatformOAuth(args.platform);
@@ -256,7 +303,7 @@ export function registerMasIpc(deps: MasIpcDeps): void {
           status: AccountStatus.CONNECTED,
           credentialRef,
           tokenExpiresAt: bundle.expiresAt,
-          metadata: {},
+          metadata: args.brandId ? { brandId: args.brandId } : {},
         }),
       );
 

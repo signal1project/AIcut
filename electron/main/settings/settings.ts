@@ -34,6 +34,8 @@ const K = {
   ollamaBaseUrl: 'mas.settings.ai.ollama.baseUrl',
   chatgptTokens: 'mas.settings.ai.chatgpt.tokens',
   brandKit: 'mas.settings.brand.kit',
+  brandProfiles: 'mas.settings.brand.profiles',
+  platformBrands: 'mas.settings.brand.platformAssignments',
   competitors: 'mas.settings.competitors',
 };
 
@@ -49,6 +51,8 @@ export interface ChatGPTTokenBundle {
  * stays on-brand across sessions and platforms.
  */
 export interface BrandKit {
+  brandName?: string;
+  bio?: string;
   /** e.g. "confident, warm, no hype" */
   voice: string;
   /** e.g. "first-time homebuyers in Houston" */
@@ -59,6 +63,12 @@ export interface BrandKit {
   bannedWords: string[];
   /** Optional signature/CTA line. */
   signature: string;
+}
+
+export interface BrandProfile extends BrandKit {
+  id: string;
+  name: string;
+  bio: string;
 }
 
 /** Manually-tracked competitor for benchmarking. */
@@ -202,6 +212,8 @@ export class Settings {
     if (!raw || typeof raw !== 'object') return null;
     const kit = raw as Partial<BrandKit>;
     return {
+      brandName: kit.brandName ?? '',
+      bio: kit.bio ?? '',
       voice: kit.voice ?? '',
       audience: kit.audience ?? '',
       hashtags: Array.isArray(kit.hashtags) ? kit.hashtags : [],
@@ -212,6 +224,46 @@ export class Settings {
 
   setBrandKit(kit: BrandKit): void {
     this.store.set(K.brandKit, kit);
+  }
+
+  getBrandProfiles(): BrandProfile[] {
+    const raw = this.store.get(K.brandProfiles);
+    if (Array.isArray(raw)) return raw as BrandProfile[];
+
+    // Carry the original single Brand Kit forward as the first company.
+    const legacy = this.getBrandKit();
+    if (!legacy) return [];
+    const migrated: BrandProfile = {
+      id: 'default-brand',
+      name: 'My Company',
+      bio: '',
+      ...legacy,
+    };
+    this.store.set(K.brandProfiles, [migrated]);
+    return [migrated];
+  }
+
+  setBrandProfiles(profiles: BrandProfile[]): void {
+    this.store.set(K.brandProfiles, profiles);
+    // Keep older content-generation code working with the first brand.
+    if (profiles[0]) {
+      const { id: _id, name, bio, ...rules } = profiles[0];
+      this.setBrandKit({ ...rules, brandName: name, bio });
+    }
+  }
+
+  getPlatformBrandAssignments(): Partial<Record<Platform, string>> {
+    const raw = this.store.get(K.platformBrands);
+    return raw && typeof raw === 'object'
+      ? (raw as Partial<Record<Platform, string>>)
+      : {};
+  }
+
+  setPlatformBrandAssignment(platform: Platform, brandId: string | null): void {
+    const assignments = this.getPlatformBrandAssignments();
+    if (brandId) assignments[platform] = brandId;
+    else delete assignments[platform];
+    this.store.set(K.platformBrands, assignments);
   }
 
   // ── Competitor tracking (manual benchmarks) ────────────────────────────────
