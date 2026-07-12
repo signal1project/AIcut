@@ -57,6 +57,8 @@ import {
   ensureFreshChatGPTAuth,
 } from '../ai';
 import { fireScheduledPost, type PublishNotifier } from './scheduledFiring';
+import { ContentAssetModel } from '../../db/models/mas/contentAsset';
+import { ConnectedAccountModel } from '../../db/models/mas/connectedAccount';
 
 export interface MasRuntimeDeps {
   dataSource: DataSource;
@@ -244,8 +246,29 @@ export function buildMasRuntime(deps: MasRuntimeDeps): MasRuntime {
   const routes: FeatureRoute[] = [
     {
       path: '/publish',
-      router: createPublishRouter(publish, scheduler, (postId) =>
-        fireScheduledPost(dataSource, publish, postId, deps.notifyPublish),
+      router: createPublishRouter(
+        publish,
+        scheduler,
+        (postId) =>
+          fireScheduledPost(dataSource, publish, postId, deps.notifyPublish),
+        async (accountIds, contentInput) => {
+          // Persist a content asset so scheduled posts survive restarts.
+          const acctRepo = dataSource.getRepository(ConnectedAccountModel);
+          const first = accountIds[0]
+            ? await acctRepo.findOneBy({ id: accountIds[0] })
+            : null;
+          const assetRepo = dataSource.getRepository(ContentAssetModel);
+          const asset = await assetRepo.save(
+            assetRepo.create({
+              platform: (first?.platform ?? 'twitter') as Platform,
+              pubType: contentInput.pubType,
+              body: contentInput.body,
+              hashtags: contentInput.hashtags,
+              mediaRefs: contentInput.mediaUrls,
+            }),
+          );
+          return asset.id;
+        },
       ),
     },
     { path: '/content', router: createContentRouter(content) },

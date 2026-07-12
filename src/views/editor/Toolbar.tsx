@@ -16,10 +16,12 @@ import {
   Save,
   Check,
   Copy,
+  Send,
 } from 'lucide-react';
 import { useEditorStore } from '@/store/editorStore';
 import { ipc } from '@/lib/ipc';
 import { saveCurrentProject, saveProjectAs } from '@/lib/projectPersistence';
+import ShareDialog from './ShareDialog';
 
 const RESOLUTIONS = ['1080p', '4k', '720p'] as const;
 const ASPECTS = [
@@ -81,6 +83,7 @@ const Toolbar: React.FC = () => {
   const [showSaveAs, setShowSaveAs] = useState(false);
   const [saveAsName, setSaveAsName] = useState('');
   const [savingAs, setSavingAs] = useState(false);
+  const [showShare, setShowShare] = useState(false);
 
   const openSaveAs = () => {
     setSaveAsName(`${useEditorStore.getState().projectName} copy`);
@@ -419,6 +422,16 @@ const Toolbar: React.FC = () => {
         )}
       </div>
 
+      {/* Share */}
+      <button
+        onClick={() => setShowShare(true)}
+        className="flex items-center gap-1.5 px-3 h-8 rounded-md bg-[#12352a] hover:bg-[#174534] text-[#22c55e] text-xs font-semibold transition-colors"
+        title="Export and post to social platforms"
+      >
+        <Send size={13} />
+        Share
+      </button>
+
       {/* Export */}
       <div className="relative">
         <button
@@ -493,6 +506,8 @@ const Toolbar: React.FC = () => {
           </div>
         )}
       </div>
+
+      {showShare && <ShareDialog onClose={() => setShowShare(false)} />}
 
       <style>{`
         .tb-btn {

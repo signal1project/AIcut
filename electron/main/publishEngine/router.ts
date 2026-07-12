@@ -26,6 +26,20 @@ export function createPublishRouter(
    * bare publishNow for tests that don't wire persistence.
    */
   fireScheduled?: (postId: string) => Promise<unknown>,
+  /**
+   * Creates a content asset for schedule requests that arrive without one
+   * (Scheduler page, Share dialog) so the post can be reconstructed after an
+   * app restart.
+   */
+  persistAsset?: (
+    accountIds: string[],
+    content: {
+      pubType: PubType;
+      body: string;
+      hashtags: string[];
+      mediaUrls: string[];
+    },
+  ) => Promise<string>,
 ): Router {
   const router = express.Router();
 
@@ -43,7 +57,16 @@ export function createPublishRouter(
       };
 
       if (b.runAt && b.runAt.getTime() > Date.now()) {
-        if (!b.contentAssetId) {
+        let assetId = b.contentAssetId;
+        if (!assetId && persistAsset) {
+          assetId = await persistAsset(b.accountIds, {
+            pubType: b.pubType,
+            body: b.body,
+            hashtags: b.hashtags,
+            mediaUrls: b.mediaRefs,
+          });
+        }
+        if (!assetId) {
           res
             .status(400)
             .json({ error: 'content_asset_required_for_schedule' });
@@ -51,7 +74,7 @@ export function createPublishRouter(
         }
         const outcome = await engine.schedule(
           b.accountIds,
-          { ...content, contentAssetId: b.contentAssetId },
+          { ...content, contentAssetId: assetId },
           b.runAt,
         );
         for (const id of outcome.scheduledPostIds) {

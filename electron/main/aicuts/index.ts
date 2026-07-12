@@ -208,6 +208,35 @@ export function registerAiCutHandlers(win: Electron.BrowserWindow) {
     },
   );
 
+  // Silent export for the Share flow — no save dialog, lands in userData/shares
+  ipcMain.handle(
+    'aicuts:export-for-share',
+    async (
+      _,
+      clips: TimelineClip[],
+      opts: Omit<ExportOptions, 'onProgress' | 'outputPath'>,
+    ) => {
+      try {
+        const sharesDir = path.join(app.getPath('userData'), 'shares');
+        const { mkdirSync } = await import('node:fs');
+        mkdirSync(sharesDir, { recursive: true });
+        const outputPath = path.join(sharesDir, `share-${Date.now()}.mp4`);
+        await exportProject(clips, {
+          ...opts,
+          outputPath,
+          onProgress: (pct) =>
+            win.webContents.send('aicuts:export-progress', pct),
+        });
+        return { success: true, outputPath };
+      } catch (err) {
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : 'Export failed',
+        };
+      }
+    },
+  );
+
   // Auto-edit via Claude
   ipcMain.handle('aicuts:auto-edit', async (_, input: AutoEditInput) => {
     try {
