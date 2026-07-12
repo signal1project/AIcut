@@ -1,6 +1,6 @@
 import { PLATFORM_CONFIG, PubType, type Platform } from '@mas/types';
 import type { AdapterHttp } from './http';
-import { buildCaption } from './util';
+import { buildCaption, isLocalMediaPath } from './util';
 import type {
   AdapterContext,
   PlatformAdapter,
@@ -33,7 +33,10 @@ export class ThreadsAdapter implements PlatformAdapter {
     return { Authorization: `Bearer ${token}` };
   }
 
-  async publish(ctx: AdapterContext, input: PublishInput): Promise<PublishResult> {
+  async publish(
+    ctx: AdapterContext,
+    input: PublishInput,
+  ): Promise<PublishResult> {
     const text = buildCaption(input);
     const hasMedia = input.mediaUrls.length > 0;
     const mediaType = !hasMedia
@@ -41,6 +44,12 @@ export class ThreadsAdapter implements PlatformAdapter {
       : input.pubType === PubType.VIDEO
         ? 'VIDEO'
         : 'IMAGE';
+
+    if (hasMedia && isLocalMediaPath(input.mediaUrls[0])) {
+      throw new Error(
+        'Threads API requires a publicly reachable media URL — post local exports via the signed-in Threads session (Share dialog) instead.',
+      );
+    }
 
     const data: Record<string, unknown> = { media_type: mediaType, text };
     if (mediaType === 'IMAGE') data.image_url = input.mediaUrls[0];
@@ -62,7 +71,10 @@ export class ThreadsAdapter implements PlatformAdapter {
     return { externalPostId: published.id };
   }
 
-  async fetchMetrics(ctx: AdapterContext, externalPostId: string): Promise<PostMetrics> {
+  async fetchMetrics(
+    ctx: AdapterContext,
+    externalPostId: string,
+  ): Promise<PostMetrics> {
     const res = await this.http.request<ThreadsInsightsResponse>({
       url: `${API_BASE}/${externalPostId}/insights`,
       method: 'GET',
@@ -70,7 +82,8 @@ export class ThreadsAdapter implements PlatformAdapter {
       params: { metric: 'views,likes,replies,reposts,quotes' },
     });
     const byName = new Map<string, number>();
-    for (const row of res.data ?? []) byName.set(row.name, row.values?.[0]?.value ?? 0);
+    for (const row of res.data ?? [])
+      byName.set(row.name, row.values?.[0]?.value ?? 0);
     const engagements =
       (byName.get('likes') ?? 0) +
       (byName.get('replies') ?? 0) +
@@ -84,7 +97,10 @@ export class ThreadsAdapter implements PlatformAdapter {
     };
   }
 
-  async fetchComments(ctx: AdapterContext, externalPostId: string): Promise<PlatformComment[]> {
+  async fetchComments(
+    ctx: AdapterContext,
+    externalPostId: string,
+  ): Promise<PlatformComment[]> {
     const res = await this.http.request<ThreadsRepliesResponse>({
       url: `${API_BASE}/${externalPostId}/replies`,
       method: 'GET',
@@ -109,7 +125,11 @@ export class ThreadsAdapter implements PlatformAdapter {
       url: `${API_BASE}/${ctx.externalId}/threads`,
       method: 'POST',
       headers: this.auth(ctx.accessToken),
-      data: { media_type: 'TEXT', text: message, reply_to_id: externalCommentId },
+      data: {
+        media_type: 'TEXT',
+        text: message,
+        reply_to_id: externalCommentId,
+      },
     });
     const published = await this.http.request<{ id: string }>({
       url: `${API_BASE}/${ctx.externalId}/threads_publish`,

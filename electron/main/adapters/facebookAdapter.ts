@@ -1,6 +1,7 @@
 import { PLATFORM_CONFIG, PubType, type Platform } from '@mas/types';
 import type { AdapterHttp } from './http';
-import { buildCaption } from './util';
+import { buildCaption, isLocalMediaPath } from './util';
+import { uploadFacebookVideo, type Fetcher } from './videoUpload';
 import type {
   AdapterContext,
   PlatformAdapter,
@@ -24,7 +25,11 @@ interface GraphInsightsResponse {
   data?: Array<{ name: string; values?: Array<{ value: number }> }>;
 }
 interface GraphCommentsResponse {
-  data?: Array<{ id: string; message?: string; from?: { name?: string; id?: string } }>;
+  data?: Array<{
+    id: string;
+    message?: string;
+    from?: { name?: string; id?: string };
+  }>;
 }
 
 /**
@@ -35,21 +40,42 @@ interface GraphCommentsResponse {
 export class FacebookAdapter implements PlatformAdapter {
   readonly platform: Platform = 'facebook';
 
-  constructor(private readonly http: AdapterHttp) {}
+  constructor(
+    private readonly http: AdapterHttp,
+    private readonly fetcher: Fetcher = fetch,
+  ) {}
 
   private auth(token: string) {
     return { Authorization: `Bearer ${token}` };
   }
 
-  async publish(ctx: AdapterContext, input: PublishInput): Promise<PublishResult> {
+  async publish(
+    ctx: AdapterContext,
+    input: PublishInput,
+  ): Promise<PublishResult> {
     const message = buildCaption(input);
 
     if (input.pubType === PubType.VIDEO) {
+      // Local exports upload the bytes; URLs use Facebook's server-side fetch.
+      if (input.mediaUrls[0] && isLocalMediaPath(input.mediaUrls[0])) {
+        const id = await uploadFacebookVideo(
+          ctx.accessToken,
+          ctx.externalId,
+          input.mediaUrls[0],
+          message,
+          this.fetcher,
+        );
+        return { externalPostId: id };
+      }
       const res = await this.http.request<{ id: string }>({
         url: `${API_BASE}/${ctx.externalId}/videos`,
         method: 'POST',
         headers: this.auth(ctx.accessToken),
-        data: { file_url: input.mediaUrls[0], description: message, published: true },
+        data: {
+          file_url: input.mediaUrls[0],
+          description: message,
+          published: true,
+        },
       });
       return { externalPostId: res.id };
     }
@@ -89,7 +115,10 @@ export class FacebookAdapter implements PlatformAdapter {
     return { externalPostId: res.id };
   }
 
-  async fetchMetrics(ctx: AdapterContext, externalPostId: string): Promise<PostMetrics> {
+  async fetchMetrics(
+    ctx: AdapterContext,
+    externalPostId: string,
+  ): Promise<PostMetrics> {
     const res = await this.http.request<GraphInsightsResponse>({
       url: `${API_BASE}/${externalPostId}/insights`,
       method: 'GET',
@@ -109,7 +138,10 @@ export class FacebookAdapter implements PlatformAdapter {
     };
   }
 
-  async fetchComments(ctx: AdapterContext, externalPostId: string): Promise<PlatformComment[]> {
+  async fetchComments(
+    ctx: AdapterContext,
+    externalPostId: string,
+  ): Promise<PlatformComment[]> {
     const res = await this.http.request<GraphCommentsResponse>({
       url: `${API_BASE}/${externalPostId}/comments`,
       method: 'GET',

@@ -1,6 +1,8 @@
 import { PLATFORM_CONFIG, type Platform } from '@mas/types';
 import type { AdapterHttp } from './http';
-import { buildCaption } from './util';
+import { PubType } from '@mas/types';
+import { buildCaption, isLocalMediaPath } from './util';
+import { uploadTwitterVideo, type Fetcher } from './videoUpload';
 import type {
   AdapterContext,
   PlatformAdapter,
@@ -41,27 +43,57 @@ interface TweetSearchResponse {
 export class TwitterAdapter implements PlatformAdapter {
   readonly platform: Platform = 'twitter';
 
-  constructor(private readonly http: AdapterHttp) {}
+  constructor(
+    private readonly http: AdapterHttp,
+    private readonly fetcher: Fetcher = fetch,
+  ) {}
 
   private auth(token: string) {
-    return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+    return {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    };
   }
 
   private clamp(text: string): string {
     return text.length <= MAX_CHARS ? text : text.slice(0, MAX_CHARS - 1) + '…';
   }
 
-  async publish(ctx: AdapterContext, input: PublishInput): Promise<PublishResult> {
+  async publish(
+    ctx: AdapterContext,
+    input: PublishInput,
+  ): Promise<PublishResult> {
+    const data: Record<string, unknown> = {
+      text: this.clamp(buildCaption(input)),
+    };
+
+    // Local video files go through the chunked v2 media upload first.
+    if (
+      input.pubType === PubType.VIDEO &&
+      input.mediaUrls[0] &&
+      isLocalMediaPath(input.mediaUrls[0])
+    ) {
+      const mediaId = await uploadTwitterVideo(
+        ctx.accessToken,
+        input.mediaUrls[0],
+        this.fetcher,
+      );
+      data.media = { media_ids: [mediaId] };
+    }
+
     const res = await this.http.request<TweetResponse>({
       url: `${API_BASE}/tweets`,
       method: 'POST',
       headers: this.auth(ctx.accessToken),
-      data: { text: this.clamp(buildCaption(input)) },
+      data,
     });
     return { externalPostId: res.data.id };
   }
 
-  async fetchMetrics(ctx: AdapterContext, externalPostId: string): Promise<PostMetrics> {
+  async fetchMetrics(
+    ctx: AdapterContext,
+    externalPostId: string,
+  ): Promise<PostMetrics> {
     const res = await this.http.request<TweetMetricsResponse>({
       url: `${API_BASE}/tweets/${externalPostId}`,
       method: 'GET',
@@ -70,7 +102,10 @@ export class TwitterAdapter implements PlatformAdapter {
     });
     const m = res.data?.public_metrics ?? {};
     const engagements =
-      (m.like_count ?? 0) + (m.reply_count ?? 0) + (m.retweet_count ?? 0) + (m.quote_count ?? 0);
+      (m.like_count ?? 0) +
+      (m.reply_count ?? 0) +
+      (m.retweet_count ?? 0) +
+      (m.quote_count ?? 0);
     return {
       impressions: m.impression_count ?? 0,
       reach: m.impression_count ?? 0, // v2 exposes no distinct reach; mirror impressions.
@@ -79,7 +114,10 @@ export class TwitterAdapter implements PlatformAdapter {
     };
   }
 
-  async fetchComments(ctx: AdapterContext, externalPostId: string): Promise<PlatformComment[]> {
+  async fetchComments(
+    ctx: AdapterContext,
+    externalPostId: string,
+  ): Promise<PlatformComment[]> {
     // Replies are tweets sharing the original's conversation_id.
     const res = await this.http.request<TweetSearchResponse>({
       url: `${API_BASE}/tweets/search/recent`,
@@ -97,7 +135,7 @@ export class TwitterAdapter implements PlatformAdapter {
     return (res.data ?? []).map((t) => ({
       externalCommentId: t.id,
       externalPostId,
-      authorHandle: t.author_id ? handleById.get(t.author_id) ?? '' : '',
+      authorHandle: t.author_id ? (handleById.get(t.author_id) ?? '') : '',
       text: t.text,
     }));
   }
@@ -111,7 +149,10 @@ export class TwitterAdapter implements PlatformAdapter {
       url: `${API_BASE}/tweets`,
       method: 'POST',
       headers: this.auth(ctx.accessToken),
-      data: { text: this.clamp(message), reply: { in_reply_to_tweet_id: externalCommentId } },
+      data: {
+        text: this.clamp(message),
+        reply: { in_reply_to_tweet_id: externalCommentId },
+      },
     });
     return { externalCommentId: res.data.id };
   }

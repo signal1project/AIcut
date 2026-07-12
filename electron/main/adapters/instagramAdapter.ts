@@ -1,6 +1,7 @@
 import { PLATFORM_CONFIG, PubType, type Platform } from '@mas/types';
 import type { AdapterHttp } from './http';
-import { buildCaption } from './util';
+import { buildCaption, isLocalMediaPath } from './util';
+import { uploadInstagramReel, type Fetcher } from './videoUpload';
 import type {
   AdapterContext,
   PlatformAdapter,
@@ -27,15 +28,33 @@ interface IgCommentsResponse {
 export class InstagramAdapter implements PlatformAdapter {
   readonly platform: Platform = 'instagram';
 
-  constructor(private readonly http: AdapterHttp) {}
+  constructor(
+    private readonly http: AdapterHttp,
+    private readonly fetcher: Fetcher = fetch,
+  ) {}
 
   private auth(token: string) {
     return { Authorization: `Bearer ${token}` };
   }
 
-  async publish(ctx: AdapterContext, input: PublishInput): Promise<PublishResult> {
+  async publish(
+    ctx: AdapterContext,
+    input: PublishInput,
+  ): Promise<PublishResult> {
     const caption = buildCaption(input);
     const isVideo = input.pubType === PubType.VIDEO;
+
+    // Local video exports use the resumable Reels upload (no public URL needed).
+    if (isVideo && input.mediaUrls[0] && isLocalMediaPath(input.mediaUrls[0])) {
+      const id = await uploadInstagramReel(
+        ctx.accessToken,
+        ctx.externalId,
+        input.mediaUrls[0],
+        caption,
+        this.fetcher,
+      );
+      return { externalPostId: id };
+    }
 
     // Single-media (most common). Carousels would create multiple children first.
     const container = await this.http.request<{ id: string }>({
@@ -56,7 +75,10 @@ export class InstagramAdapter implements PlatformAdapter {
     return { externalPostId: published.id };
   }
 
-  async fetchMetrics(ctx: AdapterContext, externalPostId: string): Promise<PostMetrics> {
+  async fetchMetrics(
+    ctx: AdapterContext,
+    externalPostId: string,
+  ): Promise<PostMetrics> {
     const res = await this.http.request<IgInsightsResponse>({
       url: `${API_BASE}/${externalPostId}/insights`,
       method: 'GET',
@@ -64,7 +86,8 @@ export class InstagramAdapter implements PlatformAdapter {
       params: { metric: 'impressions,reach,total_interactions' },
     });
     const byName = new Map<string, number>();
-    for (const row of res.data ?? []) byName.set(row.name, row.values?.[0]?.value ?? 0);
+    for (const row of res.data ?? [])
+      byName.set(row.name, row.values?.[0]?.value ?? 0);
     return {
       impressions: byName.get('impressions') ?? 0,
       reach: byName.get('reach') ?? 0,
@@ -73,7 +96,10 @@ export class InstagramAdapter implements PlatformAdapter {
     };
   }
 
-  async fetchComments(ctx: AdapterContext, externalPostId: string): Promise<PlatformComment[]> {
+  async fetchComments(
+    ctx: AdapterContext,
+    externalPostId: string,
+  ): Promise<PlatformComment[]> {
     const res = await this.http.request<IgCommentsResponse>({
       url: `${API_BASE}/${externalPostId}/comments`,
       method: 'GET',

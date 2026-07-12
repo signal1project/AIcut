@@ -1,6 +1,7 @@
 import { PLATFORM_CONFIG, type Platform } from '@mas/types';
 import type { AdapterHttp } from './http';
-import { buildCaption } from './util';
+import { buildCaption, isLocalMediaPath } from './util';
+import { uploadPinterestVideo, type Fetcher } from './videoUpload';
 import type {
   AdapterContext,
   PlatformAdapter,
@@ -29,17 +30,46 @@ interface PinAnalyticsResponse {
 export class PinterestAdapter implements PlatformAdapter {
   readonly platform: Platform = 'pinterest';
 
-  constructor(private readonly http: AdapterHttp) {}
+  constructor(
+    private readonly http: AdapterHttp,
+    private readonly fetcher: Fetcher = fetch,
+  ) {}
 
   private auth(token: string) {
-    return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+    return {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    };
   }
 
-  async publish(ctx: AdapterContext, input: PublishInput): Promise<PublishResult> {
+  async publish(
+    ctx: AdapterContext,
+    input: PublishInput,
+  ): Promise<PublishResult> {
     const boardId = (ctx.meta?.boardId as string | undefined) ?? '';
-    if (!boardId) throw new Error('Pinterest publish requires ctx.meta.boardId.');
+    if (!boardId)
+      throw new Error('Pinterest publish requires ctx.meta.boardId.');
     if (input.mediaUrls.length === 0) {
       throw new Error('Pinterest pins require at least one image.');
+    }
+
+    let mediaSource: Record<string, unknown> = {
+      source_type: 'image_url',
+      url: input.mediaUrls[0],
+    };
+    // Local video exports register+upload media, then pin by media_id.
+    if (isLocalMediaPath(input.mediaUrls[0])) {
+      const mediaId = await uploadPinterestVideo(
+        ctx.accessToken,
+        input.mediaUrls[0],
+        this.fetcher,
+      );
+      mediaSource = {
+        source_type: 'video_id',
+        media_id: mediaId,
+        cover_image_url:
+          (ctx.meta?.coverImageUrl as string | undefined) ?? undefined,
+      };
     }
 
     const res = await this.http.request<PinResponse>({
@@ -50,13 +80,16 @@ export class PinterestAdapter implements PlatformAdapter {
         board_id: boardId,
         title: input.body.slice(0, 100),
         description: buildCaption(input),
-        media_source: { source_type: 'image_url', url: input.mediaUrls[0] },
+        media_source: mediaSource,
       },
     });
     return { externalPostId: res.id };
   }
 
-  async fetchMetrics(ctx: AdapterContext, externalPostId: string): Promise<PostMetrics> {
+  async fetchMetrics(
+    ctx: AdapterContext,
+    externalPostId: string,
+  ): Promise<PostMetrics> {
     // Pinterest analytics require a date range; default to the trailing 30 days.
     const end = new Date();
     const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -73,7 +106,12 @@ export class PinterestAdapter implements PlatformAdapter {
       },
     });
 
-    const totals = { IMPRESSION: 0, SAVE: 0, PIN_CLICK: 0, OUTBOUND_CLICK: 0 } as Record<string, number>;
+    const totals = {
+      IMPRESSION: 0,
+      SAVE: 0,
+      PIN_CLICK: 0,
+      OUTBOUND_CLICK: 0,
+    } as Record<string, number>;
     for (const day of res.all?.daily_metrics ?? []) {
       for (const [k, v] of Object.entries(day.metrics ?? {})) {
         if (k in totals) totals[k] += v ?? 0;
