@@ -57,6 +57,93 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
   const [clipSrt, setClipSrt] = useState('');
   const [clipBusy, setClipBusy] = useState(false);
   const [clipStatus, setClipStatus] = useState<string | null>(null);
+  const [whisperBusy, setWhisperBusy] = useState(false);
+  const [whisperStatus, setWhisperStatus] = useState<string | null>(null);
+  const [ttsText, setTtsText] = useState('');
+  const [ttsBusy, setTtsBusy] = useState(false);
+  const [ttsStatus, setTtsStatus] = useState<string | null>(null);
+
+  /** One-click captions: Whisper on the first base-track video clip. */
+  const handleWhisperCaptions = async () => {
+    const state = useEditorStore.getState();
+    const baseVideo = state.tracks
+      .filter((t) => t.type === 'video')[0]
+      ?.clips.find((c) => c.type === 'video');
+    if (!baseVideo) {
+      setWhisperStatus('Add a video clip to the timeline first.');
+      return;
+    }
+    setWhisperBusy(true);
+    setWhisperStatus(null);
+    const result = (await ipc.invoke(
+      'aicuts:transcribe-video',
+      baseVideo.src,
+    )) as
+      | {
+          segments?: Array<{ start: number; end: number; text: string }>;
+          error?: string;
+        }
+      | undefined;
+    setWhisperBusy(false);
+    if (!result || result.error) {
+      setWhisperStatus(result?.error ?? 'Transcription failed');
+      return;
+    }
+    const segments = result.segments ?? [];
+    if (segments.length === 0) {
+      setWhisperStatus('No speech detected.');
+      return;
+    }
+    const captionTrack = tracks.find((t) => t.type === 'caption') ?? {
+      id: addTrack('caption'),
+    };
+    // Segment times are source-file times; map onto the timeline through the
+    // clip's position/trim (speed shifts handled by the same mapping).
+    const speed = baseVideo.speed ?? 1;
+    for (const seg of segments) {
+      const start =
+        baseVideo.startTime + (seg.start - baseVideo.trimStart) / speed;
+      const end = baseVideo.startTime + (seg.end - baseVideo.trimStart) / speed;
+      if (end <= baseVideo.startTime) continue;
+      addClipToTrack(captionTrack.id, {
+        src: '',
+        name: 'Caption',
+        duration: Math.max(0.3, end - Math.max(start, baseVideo.startTime)),
+        startTime: Math.max(start, baseVideo.startTime),
+        trimStart: 0,
+        trimEnd: 0,
+        type: 'caption',
+        captionText: seg.text,
+      });
+    }
+    setWhisperStatus(
+      `✓ ${segments.length} caption${segments.length === 1 ? '' : 's'} placed`,
+    );
+  };
+
+  /** Windows TTS voiceover → audio library item. */
+  const handleTts = async () => {
+    if (!ttsText.trim()) return;
+    setTtsBusy(true);
+    setTtsStatus(null);
+    const result = (await ipc.invoke('aicuts:tts', ttsText)) as
+      | { path?: string; duration?: number; name?: string; error?: string }
+      | undefined;
+    setTtsBusy(false);
+    if (!result?.path) {
+      setTtsStatus(result?.error ?? 'Voiceover failed');
+      return;
+    }
+    addMediaItem({
+      id: uuidv4(),
+      src: result.path,
+      name: result.name ?? 'Voiceover',
+      duration: result.duration ?? 5,
+      type: 'audio',
+    });
+    setTtsStatus('✓ Voiceover added to the Audio library');
+    setTtsText('');
+  };
 
   const handleAutoClip = async () => {
     const sourceVideo = mediaLibrary.find((m) => m.type === 'video');
@@ -409,14 +496,34 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
                 </span>
               </div>
               <p className="text-[10px] text-[#71717f] mb-2.5">
-                Paste your transcript and Claude will place caption clips on the
-                timeline.
+                One click: listen to your video and place timed captions
+                (Whisper — needs an OpenAI key in Settings). Or paste a
+                transcript below.
               </p>
+              <button
+                onClick={handleWhisperCaptions}
+                disabled={whisperBusy}
+                className="w-full flex items-center justify-center gap-1.5 bg-[#4d7cff] hover:bg-[#3d6cf0] disabled:opacity-50 text-white text-[11px] font-medium rounded-lg py-2 transition-colors"
+              >
+                {whisperBusy ? (
+                  <>
+                    <Loader2 size={11} className="animate-spin" />
+                    Listening…
+                  </>
+                ) : (
+                  'Generate from video audio'
+                )}
+              </button>
+              {whisperStatus && (
+                <p className="text-[10px] text-[#a1a1ab] mt-1.5">
+                  {whisperStatus}
+                </p>
+              )}
               <textarea
                 value={transcript}
                 onChange={(e) => setTranscript(e.target.value)}
-                placeholder="Paste transcript here…"
-                className="w-full bg-[#0c0c0f] text-[10px] text-ink-base rounded-lg p-2 h-20 resize-none border border-[#303039] focus:outline-none focus:border-[#4d7cff] placeholder:text-[#4a4a55]"
+                placeholder="…or paste a transcript here"
+                className="mt-2 w-full bg-[#0c0c0f] text-[10px] text-ink-base rounded-lg p-2 h-16 resize-none border border-[#303039] focus:outline-none focus:border-[#4d7cff] placeholder:text-[#4a4a55]"
               />
               <button
                 onClick={handleGenerateCaptions}
@@ -531,22 +638,41 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
               </p>
             </div>
 
-            {/* Voice Studio stub */}
-            <div className="p-3 rounded-xl bg-[#1d1d22] border border-[#26262d] opacity-60">
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-2">
-                  <Mic size={14} className="text-[#22c55e]" />
-                  <span className="text-[12px] font-semibold text-ink-strong">
-                    Voice Studio
-                  </span>
-                </div>
-                <span className="text-[9px] bg-[#26262d] text-[#71717f] px-1.5 py-0.5 rounded font-medium">
-                  Soon
+            {/* Voice Studio — Windows TTS, keyless */}
+            <div className="p-3 rounded-xl bg-[#1d1d22] border border-[#26262d]">
+              <div className="flex items-center gap-2 mb-2">
+                <Mic size={14} className="text-[#22c55e]" />
+                <span className="text-[12px] font-semibold text-ink-strong">
+                  Voice Studio
                 </span>
               </div>
-              <p className="text-[10px] text-[#71717f]">
-                Text-to-speech voiceover generation (ElevenLabs)
+              <p className="text-[10px] text-[#71717f] mb-2.5">
+                Type a script — Windows speech synthesis reads it into a
+                voiceover clip in your Audio library. No key needed.
               </p>
+              <textarea
+                value={ttsText}
+                onChange={(e) => setTtsText(e.target.value)}
+                placeholder="Voiceover script…"
+                className="w-full bg-[#0c0c0f] text-[10px] text-ink-base rounded-lg p-2 h-16 resize-none border border-[#303039] focus:outline-none focus:border-[#22c55e] placeholder:text-[#4a4a55]"
+              />
+              <button
+                onClick={handleTts}
+                disabled={ttsBusy || !ttsText.trim()}
+                className="mt-2 w-full flex items-center justify-center gap-1.5 bg-[#12352a] hover:bg-[#174534] disabled:opacity-50 text-[#22c55e] text-[11px] font-medium rounded-lg py-2 transition-colors"
+              >
+                {ttsBusy ? (
+                  <>
+                    <Loader2 size={11} className="animate-spin" />
+                    Speaking…
+                  </>
+                ) : (
+                  'Generate Voiceover'
+                )}
+              </button>
+              {ttsStatus && (
+                <p className="text-[10px] text-[#a1a1ab] mt-1.5">{ttsStatus}</p>
+              )}
             </div>
           </div>
         )}

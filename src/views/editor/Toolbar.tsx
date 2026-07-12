@@ -76,6 +76,7 @@ const Toolbar: React.FC = () => {
     '1080p',
   );
   const [aspect, setAspect] = useState<'16:9' | '9:16' | '1:1' | '4:5'>('16:9');
+  const [duckMusic, setDuckMusic] = useState(false);
   const [autoEditing, setAutoEditing] = useState(false);
   const [showSaveAs, setShowSaveAs] = useState(false);
   const [saveAsName, setSaveAsName] = useState('');
@@ -166,6 +167,7 @@ const Toolbar: React.FC = () => {
     const result = (await ipc.invoke('aicuts:export', allClips, {
       resolution,
       aspect,
+      duckMusic,
       format: 'mp4',
       fps: 30,
     })) as
@@ -473,6 +475,15 @@ const Toolbar: React.FC = () => {
                 </button>
               ))}
             </div>
+            <label className="flex items-center gap-2 mb-3 text-[11px] text-[#9a9aa6] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={duckMusic}
+                onChange={(e) => setDuckMusic(e.target.checked)}
+                className="accent-[#4d7cff]"
+              />
+              Duck music under voice
+            </label>
             <button
               onClick={handleExport}
               className="w-full bg-[#22c55e] hover:bg-[#1faa52] text-[#06210f] text-xs font-semibold rounded-lg py-2 transition-colors"

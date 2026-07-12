@@ -10,17 +10,60 @@ import {
 import { ensurePreviewMedia } from './previewProxy';
 import { registerProjectHandlers } from './projects';
 import {
+  transcribeVideoAudio,
+  synthesizeVoiceover,
+  audioPeaks,
+} from './audioTools';
+import {
   autoEdit,
   generateCaptionsFromTranscript,
   type AutoEditInput,
 } from './autoEdit';
+import { Settings } from '../settings/settings';
+import { store } from '../../global/store';
 import { logger } from '../../global/log';
 
 export function registerAiCutHandlers(win: Electron.BrowserWindow) {
   registerProjectHandlers();
 
+  const settings = new Settings(store);
   const proxyCacheDir = path.join(app.getPath('userData'), 'preview-proxies');
   const thumbsDir = path.join(app.getPath('userData'), 'thumbs');
+  const voiceoverDir = path.join(app.getPath('userData'), 'voiceovers');
+  const waveformCacheDir = path.join(app.getPath('userData'), 'waveforms');
+
+  // One-click captions: extract audio → Whisper (needs OpenAI key in Settings)
+  ipcMain.handle('aicuts:transcribe-video', async (_, videoPath: string) => {
+    try {
+      const key = settings.getProviderSettings('openai')?.apiKey;
+      if (!key) {
+        return {
+          error:
+            'Auto-captions from audio need an OpenAI API key (Settings → AI Providers → OpenAI) for Whisper. You can also paste a transcript instead.',
+        };
+      }
+      const segments = await transcribeVideoAudio(videoPath, key);
+      return { segments };
+    } catch (err) {
+      return {
+        error: err instanceof Error ? err.message : 'Transcription failed',
+      };
+    }
+  });
+
+  // Keyless Windows TTS voiceover → wav in userData/voiceovers
+  ipcMain.handle('aicuts:tts', async (_, text: string, rate?: number) => {
+    try {
+      return await synthesizeVoiceover(text, voiceoverDir, rate ?? 1);
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : 'TTS failed' };
+    }
+  });
+
+  // Real waveform peaks (cached)
+  ipcMain.handle('aicuts:audio-peaks', async (_, filePath: string) => {
+    return audioPeaks(filePath, waveformCacheDir);
+  });
 
   // Import video file(s) via dialog
   ipcMain.handle('aicuts:import-video', async () => {

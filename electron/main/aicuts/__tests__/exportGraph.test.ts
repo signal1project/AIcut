@@ -250,3 +250,20 @@ describe('buildAssSubtitles', () => {
     expect(ass).toMatch(/,8,40,40,40,1$/m);
   });
 });
+
+describe('bucketPeaks', () => {
+  it('buckets absolute peaks into 0..1', async () => {
+    const { bucketPeaks } = await import('../audioTools');
+    const samples = new Int16Array([0, 16384, -32768, 100, 0, 0, 8192, -16384]);
+    const peaks = bucketPeaks(samples, 4);
+    expect(peaks).toHaveLength(4);
+    expect(peaks[0]).toBeCloseTo(0.5, 1);
+    expect(peaks[1]).toBeCloseTo(1, 2);
+    expect(peaks[3]).toBeCloseTo(0.5, 1);
+  });
+
+  it('handles empty input', async () => {
+    const { bucketPeaks } = await import('../audioTools');
+    expect(bucketPeaks(new Int16Array(0), 10)).toEqual([]);
+  });
+});

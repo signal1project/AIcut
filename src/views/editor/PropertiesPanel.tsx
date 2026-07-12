@@ -319,7 +319,7 @@ const PropertiesPanel: React.FC = () => {
             </Field>
           )}
 
-          {isVisual && (
+          {(isVisual || clip.type === 'audio') && (
             <Field label="Fade in / out">
               <div className="space-y-2.5">
                 <Slider

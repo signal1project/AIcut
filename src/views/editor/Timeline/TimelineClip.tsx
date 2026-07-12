@@ -1,7 +1,38 @@
-import React, { useRef, useCallback } from 'react';
+import React, { useRef, useCallback, useEffect, useState } from 'react';
 import { Type } from 'lucide-react';
 import { useEditorStore, type Clip } from '@/store/editorStore';
 import { toMediaUrl } from '@/lib/media';
+import { ipc, hasIpc } from '@/lib/ipc';
+
+// Real waveform peaks per source file, cached for the session.
+const peaksCache = new Map<string, number[]>();
+const peaksPending = new Map<string, Promise<number[]>>();
+
+function usePeaks(src: string | undefined, enabled: boolean): number[] | null {
+  const [peaks, setPeaks] = useState<number[] | null>(
+    src ? (peaksCache.get(src) ?? null) : null,
+  );
+  useEffect(() => {
+    if (!enabled || !src || !hasIpc() || peaksCache.has(src)) return;
+    let alive = true;
+    let promise = peaksPending.get(src);
+    if (!promise) {
+      promise = ipc
+        .invoke('aicuts:audio-peaks', src)
+        .then((r) => (Array.isArray(r) ? (r as number[]) : []));
+      peaksPending.set(src, promise);
+    }
+    void promise.then((p) => {
+      peaksCache.set(src, p);
+      peaksPending.delete(src);
+      if (alive) setPeaks(p);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [src, enabled]);
+  return peaks;
+}
 
 interface Props {
   clip: Clip;
@@ -43,6 +74,23 @@ const TimelineClip: React.FC<Props> = ({ clip, zoom, trackLocked }) => {
   const left = clip.startTime * zoom;
   const width = Math.max(effectiveDuration * zoom, 6);
   const style = TYPE_STYLE[clip.type] ?? TYPE_STYLE.video;
+
+  // Real waveform for audio clips (falls back to the decorative pattern
+  // until peaks arrive). Trimmed region maps onto the full-file peak array.
+  const realPeaks = usePeaks(clip.src, clip.type === 'audio');
+  let waveBars: number[] = WAVE;
+  if (clip.type === 'audio' && realPeaks && realPeaks.length > 0) {
+    const total = clip.duration || 1;
+    const startFrac = clip.trimStart / total;
+    const endFrac = 1 - clip.trimEnd / total;
+    const startIdx = Math.floor(startFrac * realPeaks.length);
+    const endIdx = Math.max(
+      startIdx + 1,
+      Math.ceil(endFrac * realPeaks.length),
+    );
+    waveBars = realPeaks.slice(startIdx, endIdx);
+    if (waveBars.length === 0) waveBars = WAVE;
+  }
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -140,15 +188,15 @@ const TimelineClip: React.FC<Props> = ({ clip, zoom, trackLocked }) => {
         />
       )}
 
-      {/* Audio waveform */}
+      {/* Audio waveform (real peaks when available) */}
       {clip.type === 'audio' && (
         <div className="absolute inset-0 flex items-center gap-px px-1 pointer-events-none opacity-90">
-          {WAVE.map((h, i) => (
+          {waveBars.map((h, i) => (
             <div
               key={i}
               className="flex-1 rounded-full"
               style={{
-                height: `${h * 70}%`,
+                height: `${Math.max(0.06, h) * 70}%`,
                 background: style.bar,
                 minWidth: 1,
               }}
