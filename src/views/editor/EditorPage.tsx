@@ -31,9 +31,24 @@ const EditorPage: React.FC = () => {
   useAutosave();
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      const key = e.key.toLowerCase();
+      // Don't hijack undo/redo while typing in inputs.
+      const target = e.target as HTMLElement | null;
+      const typing =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.isContentEditable;
+      if (key === 's') {
         e.preventDefault();
         void saveCurrentProject();
+      } else if (!typing && key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        useEditorStore.getState().undo();
+      } else if (!typing && (key === 'y' || (key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        useEditorStore.getState().redo();
       }
     };
     window.addEventListener('keydown', onKeyDown);

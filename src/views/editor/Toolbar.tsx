@@ -64,6 +64,10 @@ const Toolbar: React.FC = () => {
   const splitClip = useEditorStore((s) => s.splitClip);
   const setZoom = useEditorStore((s) => s.setZoom);
   const setExportProgress = useEditorStore((s) => s.setExportProgress);
+  const undo = useEditorStore((s) => s.undo);
+  const redo = useEditorStore((s) => s.redo);
+  const canUndo = useEditorStore((s) => s.past.length > 0);
+  const canRedo = useEditorStore((s) => s.future.length > 0);
 
   const [autoEditPrompt, setAutoEditPrompt] = useState('');
   const [showAutoEdit, setShowAutoEdit] = useState(false);
@@ -263,10 +267,20 @@ const Toolbar: React.FC = () => {
       <div className="tb-sep" />
 
       {/* Undo/Redo */}
-      <button className="tb-btn" title="Undo (Ctrl+Z)">
+      <button
+        onClick={undo}
+        disabled={!canUndo}
+        className="tb-btn"
+        title="Undo (Ctrl+Z)"
+      >
         <Undo2 size={14} />
       </button>
-      <button className="tb-btn" title="Redo (Ctrl+Y)">
+      <button
+        onClick={redo}
+        disabled={!canRedo}
+        className="tb-btn"
+        title="Redo (Ctrl+Y)"
+      >
         <Redo2 size={14} />
       </button>
 

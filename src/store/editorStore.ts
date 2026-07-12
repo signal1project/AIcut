@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
+import { original } from 'immer';
 import { v4 as uuidv4 } from 'uuid';
 
 export type ClipType = 'video' | 'audio' | 'caption' | 'image';
@@ -121,6 +122,12 @@ export interface EditorState {
   exportProgress: number | null; // 0-100 during export, null otherwise
   captionJobId: string | null;
 
+  // Undo/redo — snapshots of `tracks` (immer structural sharing keeps these cheap)
+  past: Track[][];
+  future: Track[][];
+  historyKey: string | null; // coalescing: continuous drags = one undo step
+  historyAt: number;
+
   // Actions
   setProjectName: (name: string) => void;
   hydrateProject: (snapshot: ProjectSnapshot) => void;
@@ -189,6 +196,28 @@ function calcDuration(tracks: Track[]): number {
   return max;
 }
 
+const HISTORY_LIMIT = 100;
+/** Mutations with the same key inside this window share ONE undo step (drags). */
+const HISTORY_COALESCE_MS = 800;
+
+/**
+ * Record the pre-mutation tracks state for undo. Call at the TOP of any
+ * mutating action, inside the immer recipe, before touching s.tracks.
+ */
+function pushHistory(s: EditorState, key: string): void {
+  const now = Date.now();
+  if (s.historyKey === key && now - s.historyAt < HISTORY_COALESCE_MS) {
+    s.historyAt = now; // still the same gesture — keep the original checkpoint
+    return;
+  }
+  const base = (original(s.tracks) ?? s.tracks) as Track[];
+  s.past.push(base);
+  if (s.past.length > HISTORY_LIMIT) s.past.shift();
+  s.future = [];
+  s.historyKey = key;
+  s.historyAt = now;
+}
+
 export const useEditorStore = create<EditorState>()(
   immer((set, get) => ({
     projectId: uuidv4(),
@@ -205,6 +234,10 @@ export const useEditorStore = create<EditorState>()(
     mediaLibrary: [],
     exportProgress: null,
     captionJobId: null,
+    past: [],
+    future: [],
+    historyKey: null,
+    historyAt: 0,
 
     setProjectName: (name) =>
       set((s) => {
@@ -228,6 +261,9 @@ export const useEditorStore = create<EditorState>()(
         s.exportProgress = null;
         s.captionJobId = null;
         s.duration = calcDuration(s.tracks);
+        s.past = [];
+        s.future = [];
+        s.historyKey = null;
         s.saveState = 'saved';
       }),
 
@@ -270,6 +306,7 @@ export const useEditorStore = create<EditorState>()(
     addClipToTrack: (trackId, clip) => {
       const id = uuidv4();
       set((s) => {
+        pushHistory(s, `addClip:${trackId}`);
         const track = s.tracks.find((t) => t.id === trackId);
         if (track) {
           track.clips.push({ ...clip, id, trackId });
@@ -282,6 +319,7 @@ export const useEditorStore = create<EditorState>()(
 
     removeClip: (clipId) =>
       set((s) => {
+        pushHistory(s, `removeClip:${clipId}`);
         for (const track of s.tracks) {
           const idx = track.clips.findIndex((c) => c.id === clipId);
           if (idx !== -1) {
@@ -296,6 +334,7 @@ export const useEditorStore = create<EditorState>()(
 
     updateClip: (clipId, patch) =>
       set((s) => {
+        pushHistory(s, `updateClip:${clipId}:${Object.keys(patch).join(',')}`);
         for (const track of s.tracks) {
           const clip = track.clips.find((c) => c.id === clipId);
           if (clip) {
@@ -309,6 +348,7 @@ export const useEditorStore = create<EditorState>()(
 
     moveClip: (clipId, newStartTime, newTrackId) =>
       set((s) => {
+        pushHistory(s, `moveClip:${clipId}`);
         let found: Clip | undefined;
         let fromTrack: Track | undefined;
         for (const track of s.tracks) {
@@ -335,6 +375,7 @@ export const useEditorStore = create<EditorState>()(
 
     trimClip: (clipId, trimStart, trimEnd) =>
       set((s) => {
+        pushHistory(s, `trimClip:${clipId}`);
         for (const track of s.tracks) {
           const clip = track.clips.find((c) => c.id === clipId);
           if (clip) {
@@ -349,6 +390,7 @@ export const useEditorStore = create<EditorState>()(
 
     splitClip: (clipId, atTime) =>
       set((s) => {
+        pushHistory(s, `splitClip:${clipId}:${atTime}`);
         for (const track of s.tracks) {
           const idx = track.clips.findIndex((c) => c.id === clipId);
           if (idx === -1) continue;
@@ -405,6 +447,7 @@ export const useEditorStore = create<EditorState>()(
     addTrack: (type, label) => {
       const id = uuidv4();
       set((s) => {
+        pushHistory(s, `addTrack:${id}`);
         const count = s.tracks.filter((t) => t.type === type).length + 1;
         s.tracks.push({
           id,
@@ -420,6 +463,7 @@ export const useEditorStore = create<EditorState>()(
 
     removeTrack: (trackId) =>
       set((s) => {
+        pushHistory(s, `removeTrack:${trackId}`);
         s.tracks = s.tracks.filter((t) => t.id !== trackId);
         s.duration = calcDuration(s.tracks);
         s.saveState = 'dirty';
@@ -447,11 +491,42 @@ export const useEditorStore = create<EditorState>()(
         s.duration = calcDuration(s.tracks);
       }),
 
-    undo: () => {},
-    redo: () => {},
+    undo: () => {
+      const cur = get();
+      if (cur.past.length === 0) return;
+      const prev = cur.past[cur.past.length - 1];
+      set((s) => {
+        s.past.pop();
+        s.future.push(cur.tracks);
+        if (s.future.length > HISTORY_LIMIT) s.future.shift();
+        s.tracks = prev;
+        s.duration = calcDuration(prev);
+        s.selectedClipId = null;
+        s.historyKey = null;
+        s.saveState = 'dirty';
+      });
+    },
+    redo: () => {
+      const cur = get();
+      if (cur.future.length === 0) return;
+      const next = cur.future[cur.future.length - 1];
+      set((s) => {
+        s.future.pop();
+        s.past.push(cur.tracks);
+        if (s.past.length > HISTORY_LIMIT) s.past.shift();
+        s.tracks = next;
+        s.duration = calcDuration(next);
+        s.selectedClipId = null;
+        s.historyKey = null;
+        s.saveState = 'dirty';
+      });
+    },
 
     resetProject: () =>
       set((s) => {
+        s.past = [];
+        s.future = [];
+        s.historyKey = null;
         s.projectId = uuidv4();
         s.projectName = 'Untitled Project';
         s.saveState = 'clean';
