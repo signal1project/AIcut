@@ -56,6 +56,7 @@ import {
   createAIProvider as buildAIProvider,
   ensureFreshChatGPTAuth,
 } from '../ai';
+import { fireScheduledPost, type PublishNotifier } from './scheduledFiring';
 
 export interface MasRuntimeDeps {
   dataSource: DataSource;
@@ -63,6 +64,8 @@ export interface MasRuntimeDeps {
   credentials: CredentialManager;
   /** Directory for generated artifacts (bio pages, reels). Defaults to ~/.aicut. */
   dataDir?: string;
+  /** Surface publish success/failure (e.g. desktop Notification). */
+  notifyPublish?: PublishNotifier;
 }
 
 export interface MasRuntime {
@@ -239,7 +242,12 @@ export function buildMasRuntime(deps: MasRuntimeDeps): MasRuntime {
   });
 
   const routes: FeatureRoute[] = [
-    { path: '/publish', router: createPublishRouter(publish, scheduler) },
+    {
+      path: '/publish',
+      router: createPublishRouter(publish, scheduler, (postId) =>
+        fireScheduledPost(dataSource, publish, postId, deps.notifyPublish),
+      ),
+    },
     { path: '/content', router: createContentRouter(content) },
     { path: '/analytics', router: createAnalyticsRouter(analytics) },
     { path: '/engagement', router: createEngagementRouter(engagement) },

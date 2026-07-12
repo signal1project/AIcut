@@ -281,6 +281,70 @@ function ProviderCard({
   );
 }
 
+function BackgroundPrefsCard(): React.ReactElement {
+  const [prefs, setPrefs] = useState<{
+    keepInTray: boolean;
+    launchAtLogin: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    void window.ipcRenderer
+      .invoke('app:get-background-prefs')
+      .then((p) =>
+        setPrefs(p as { keepInTray: boolean; launchAtLogin: boolean }),
+      )
+      .catch(() => setPrefs(null));
+  }, []);
+
+  const update = async (patch: Partial<NonNullable<typeof prefs>>) => {
+    const next = {
+      ...(prefs ?? { keepInTray: true, launchAtLogin: false }),
+      ...patch,
+    };
+    setPrefs(next);
+    await window.ipcRenderer.invoke('app:set-background-prefs', patch);
+    toast.success('App behavior saved');
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Rocket size={16} className="text-[#22c55e]" /> App Behavior
+        </CardTitle>
+        <CardDescription>
+          Scheduled posts only publish while AICut is running — keep it in the
+          tray so nothing gets missed.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2.5">
+        <label className="flex items-center gap-2.5 text-sm text-ink-base cursor-pointer">
+          <input
+            type="checkbox"
+            checked={prefs?.keepInTray ?? true}
+            onChange={(e) => void update({ keepInTray: e.target.checked })}
+            className="accent-[#4d7cff]"
+          />
+          Keep running in the tray when the window is closed
+        </label>
+        <label className="flex items-center gap-2.5 text-sm text-ink-base cursor-pointer">
+          <input
+            type="checkbox"
+            checked={prefs?.launchAtLogin ?? false}
+            onChange={(e) => void update({ launchAtLogin: e.target.checked })}
+            className="accent-[#4d7cff]"
+          />
+          Start AICut when Windows starts (hidden, in the tray)
+        </label>
+        <p className="text-[11px] text-ink-muted">
+          Posts that came due while AICut was closed are caught up automatically
+          at the next launch, with a desktop notification per result.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function SettingsPage(): React.ReactElement {
   const ipc = useMasIpc();
   const navigate = useNavigate();
@@ -395,6 +459,9 @@ export default function SettingsPage(): React.ReactElement {
           </p>
         </button>
       </div>
+
+      {/* App behavior (tray + login) */}
+      <BackgroundPrefsCard />
 
       {/* Local integrations (read-only info) */}
       <Card>

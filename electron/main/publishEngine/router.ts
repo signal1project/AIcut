@@ -17,7 +17,16 @@ const publishBodySchema = z.object({
   runAt: z.coerce.date().optional(),
 });
 
-export function createPublishRouter(engine: PublishEngine, scheduler: Scheduler): Router {
+export function createPublishRouter(
+  engine: PublishEngine,
+  scheduler: Scheduler,
+  /**
+   * When provided, timers fire through this (publishes AND updates the
+   * scheduled row's status — see mas/scheduledFiring.ts). Falls back to a
+   * bare publishNow for tests that don't wire persistence.
+   */
+  fireScheduled?: (postId: string) => Promise<unknown>,
+): Router {
   const router = express.Router();
 
   router.post(
@@ -35,7 +44,9 @@ export function createPublishRouter(engine: PublishEngine, scheduler: Scheduler)
 
       if (b.runAt && b.runAt.getTime() > Date.now()) {
         if (!b.contentAssetId) {
-          res.status(400).json({ error: 'content_asset_required_for_schedule' });
+          res
+            .status(400)
+            .json({ error: 'content_asset_required_for_schedule' });
           return;
         }
         const outcome = await engine.schedule(
@@ -45,10 +56,14 @@ export function createPublishRouter(engine: PublishEngine, scheduler: Scheduler)
         );
         for (const id of outcome.scheduledPostIds) {
           scheduler.schedule(id, b.runAt, () => {
-            void engine.publishNow(b.accountIds, content);
+            if (fireScheduled) void fireScheduled(id);
+            else void engine.publishNow(b.accountIds, content);
           });
         }
-        res.status(202).json({ scheduled: true, scheduledPostIds: outcome.scheduledPostIds });
+        res.status(202).json({
+          scheduled: true,
+          scheduledPostIds: outcome.scheduledPostIds,
+        });
         return;
       }
 

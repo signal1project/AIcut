@@ -61,6 +61,10 @@ if (process.platform === 'win32') app.setAppUserModelId('AICut');
 
 let win: BrowserWindow | null = null;
 let splashWindow: SplashWindow | null = null;
+let isQuitting = false;
+app.on('before-quit', () => {
+  isQuitting = true;
+});
 const preload = path.join(__dirname, '../preload/index.mjs');
 const indexHtml = path.join(RENDERER_DIST, 'index.html');
 
@@ -111,9 +115,10 @@ async function createWindow() {
     await win.loadFile(indexHtml);
   }
 
+  const startHidden = process.argv.includes('--hidden');
   setTimeout(() => {
     if (splashWindow) {
-      win?.show();
+      if (!startHidden) win?.show();
 
       if (process.env.NODE_ENV === 'development') {
         win?.webContents.openDevTools({ mode: 'right' });
@@ -129,6 +134,16 @@ async function createWindow() {
   }, 500);
 
   win.setMenu(null);
+
+  // Close-to-tray: the scheduler must survive the window closing, or
+  // scheduled posts silently die with it. Quit explicitly via tray menu.
+  win.on('close', (e) => {
+    const keepInTray = store.get('app.keepInTray') ?? true;
+    if (keepInTray && !isQuitting) {
+      e.preventDefault();
+      win?.hide();
+    }
+  });
 
   win.webContents.on('did-finish-load', () => {
     win?.webContents.send('main-process-message', new Date().toLocaleString());
@@ -237,6 +252,29 @@ app.on('activate', () => {
     createWindow();
   }
 });
+
+// Background behavior preferences (Settings → App)
+ipcMain.handle('app:get-background-prefs', () => ({
+  keepInTray: (store.get('app.keepInTray') as boolean | undefined) ?? true,
+  launchAtLogin: app.getLoginItemSettings().openAtLogin,
+}));
+
+ipcMain.handle(
+  'app:set-background-prefs',
+  (_e, prefs: { keepInTray?: boolean; launchAtLogin?: boolean }) => {
+    if (typeof prefs.keepInTray === 'boolean') {
+      store.set('app.keepInTray', prefs.keepInTray);
+    }
+    if (typeof prefs.launchAtLogin === 'boolean') {
+      app.setLoginItemSettings({
+        openAtLogin: prefs.launchAtLogin,
+        // Start hidden in the tray so login doesn't pop the editor.
+        args: ['--hidden'],
+      });
+    }
+    return { ok: true };
+  },
+);
 
 ipcMain.handle('open-win', (_, arg) => {
   const childWindow = new BrowserWindow({
