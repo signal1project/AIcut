@@ -13,6 +13,7 @@ const TYPE_STYLE: Record<string, { from: string; to: string; bar: string }> = {
   video: { from: '#3f6fef', to: '#5b87ff', bar: 'rgba(255,255,255,0.18)' },
   audio: { from: '#179a57', to: '#27c46e', bar: 'rgba(255,255,255,0.35)' },
   caption: { from: '#b9842c', to: '#e0a93a', bar: 'rgba(255,255,255,0.2)' },
+  image: { from: '#7c4fd0', to: '#a78bfa', bar: 'rgba(255,255,255,0.2)' },
 };
 
 // deterministic pseudo-waveform heights for audio clips
@@ -127,8 +128,8 @@ const TimelineClip: React.FC<Props> = ({ clip, zoom, trackLocked }) => {
       onMouseDown={handleMouseDown}
       onDoubleClick={() => setPlayhead(clip.startTime)}
     >
-      {/* Video thumbnail fill */}
-      {clip.type === 'video' && clip.thumbnail && (
+      {/* Video/image thumbnail fill */}
+      {(clip.type === 'video' || clip.type === 'image') && clip.thumbnail && (
         <img
           src={toMediaUrl(clip.thumbnail)}
           className="absolute inset-0 w-full h-full object-cover opacity-55 pointer-events-none"

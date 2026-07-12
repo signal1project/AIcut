@@ -185,6 +185,74 @@ export function findClipAt(
   return null;
 }
 
+/** First video-type track = the base track; others are overlays. */
+export function videoTracksOf(tracks: Track[]): Track[] {
+  return tracks.filter((t) => t.type === 'video');
+}
+
+/** Visual clip (video OR image) under `time` on the BASE video track. */
+export function findBaseVisualClipAt(
+  tracks: Track[],
+  time: number,
+): { clip: Clip; track: Track } | null {
+  const base = videoTracksOf(tracks)[0];
+  if (!base) return null;
+  for (const clip of base.clips) {
+    const end = clip.startTime + clipEffectiveDuration(clip);
+    if (time >= clip.startTime && time < end) return { clip, track: base };
+  }
+  return null;
+}
+
+/** Clips under `time` on overlay tracks (video tracks 1+), in track order. */
+export function findOverlayClipsAt(
+  tracks: Track[],
+  time: number,
+): Array<{ clip: Clip; track: Track }> {
+  const out: Array<{ clip: Clip; track: Track }> = [];
+  for (const track of videoTracksOf(tracks).slice(1)) {
+    for (const clip of track.clips) {
+      const end = clip.startTime + clipEffectiveDuration(clip);
+      if (time >= clip.startTime && time < end) out.push({ clip, track });
+    }
+  }
+  return out;
+}
+
+/** CSS filter string approximating a clip's export color adjustments. */
+export function cssFilterFor(adjust?: ClipAdjust): string {
+  if (!adjust) return 'none';
+  let { brightness = 0, contrast = 1, saturation = 1 } = adjust;
+  let extra = '';
+  switch (adjust.preset) {
+    case 'vivid':
+      saturation *= 1.35;
+      contrast *= 1.1;
+      break;
+    case 'warm':
+      extra = ' sepia(0.25)';
+      break;
+    case 'cool':
+      extra = ' hue-rotate(15deg)';
+      break;
+    case 'mono':
+      saturation = 0;
+      break;
+    case 'bright':
+      brightness += 0.12;
+      break;
+  }
+  const parts = [
+    `brightness(${(1 + brightness).toFixed(3)})`,
+    `contrast(${contrast.toFixed(3)})`,
+    `saturate(${saturation.toFixed(3)})`,
+  ];
+  const joined = parts.join(' ') + extra;
+  return joined === 'brightness(1.000) contrast(1.000) saturate(1.000)'
+    ? 'none'
+    : joined;
+}
+
 function calcDuration(tracks: Track[]): number {
   let max = 0;
   for (const track of tracks) {

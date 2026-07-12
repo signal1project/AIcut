@@ -104,7 +104,10 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
   };
 
   const handleAddToTimeline = (item: MediaItem) => {
-    const targetTrack = tracks.find((t) => t.type === item.type) ?? tracks[0];
+    // Images ride the video track (base = full-frame; drag to a second video
+    // track to make them overlays/watermarks).
+    const trackType = item.type === 'image' ? 'video' : item.type;
+    const targetTrack = tracks.find((t) => t.type === trackType) ?? tracks[0];
     if (!targetTrack) return;
     const lastEnd = targetTrack.clips.reduce((max, c) => {
       const end = c.startTime + (c.duration - c.trimStart - c.trimEnd);
@@ -118,7 +121,7 @@ const MediaPanel: React.FC<Props> = ({ section }) => {
       startTime: lastEnd,
       trimStart: 0,
       trimEnd: 0,
-      type: item.type,
+      type: item.type === 'image' ? 'image' : item.type,
       thumbnail: item.thumbnail,
     });
   };

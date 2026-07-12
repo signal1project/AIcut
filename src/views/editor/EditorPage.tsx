@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Film, Music, Type, Sparkles, Wand2, Link2 } from 'lucide-react';
-import { useEditorStore, findClipAt } from '@/store/editorStore';
+import { useEditorStore, findBaseVisualClipAt } from '@/store/editorStore';
 import { useAutosave, saveCurrentProject } from '@/lib/projectPersistence';
 import Toolbar from './Toolbar';
 import MediaPanel, { type PanelSection } from './MediaPanel';
@@ -70,7 +70,9 @@ const EditorPage: React.FC = () => {
       if (lastTimeRef.current == null) lastTimeRef.current = now;
       const delta = (now - lastTimeRef.current) / 1000;
       lastTimeRef.current = now;
-      if (!findClipAt(s.tracks, 'video', s.playhead)) {
+      // Advance unless a VIDEO clip owns the clock (images/gaps/captions tick here).
+      const base = findBaseVisualClipAt(s.tracks, s.playhead);
+      if (!base || base.clip.type !== 'video') {
         const next = s.playhead + delta;
         if (s.duration > 0 && next >= s.duration) {
           s.setPlayhead(s.duration);

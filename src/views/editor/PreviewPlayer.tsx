@@ -3,7 +3,10 @@ import { Play, Pause, Volume2, VolumeX, Maximize2 } from 'lucide-react';
 import {
   useEditorStore,
   findClipAt,
+  findBaseVisualClipAt,
+  findOverlayClipsAt,
   clipEffectiveDuration,
+  cssFilterFor,
   type Clip,
 } from '@/store/editorStore';
 import { toMediaUrl } from '@/lib/media';
@@ -13,6 +16,46 @@ function toClipTime(clip: Clip, timelineTime: number): number {
   return clip.trimStart + (timelineTime - clip.startTime) * (clip.speed ?? 1);
 }
 
+/** Positioned overlay element (image or muted video) over the preview stage. */
+const OverlayItem: React.FC<{
+  clip: Clip;
+  isPlaying: boolean;
+  playhead: number;
+}> = ({ clip, isPlaying, playhead }) => {
+  const ref = useRef<HTMLVideoElement>(null);
+  const ov = clip.overlay ?? { x: 0.65, y: 0.05, scale: 0.3, opacity: 1 };
+  const src = toMediaUrl(clip.previewSrc ?? clip.src);
+
+  useEffect(() => {
+    const v = ref.current;
+    if (!v) return;
+    if (isPlaying) v.play().catch(() => {});
+    else v.pause();
+  }, [isPlaying]);
+
+  useEffect(() => {
+    const v = ref.current;
+    if (!v || isPlaying) return;
+    const t = toClipTime(clip, playhead);
+    if (Math.abs(v.currentTime - t) > 0.25) v.currentTime = t;
+  }, [playhead, isPlaying, clip]);
+
+  const style: React.CSSProperties = {
+    position: 'absolute',
+    left: `${ov.x * 100}%`,
+    top: `${ov.y * 100}%`,
+    width: `${ov.scale * 100}%`,
+    opacity: ov.opacity,
+    filter: cssFilterFor(clip.adjust),
+    pointerEvents: 'none',
+  };
+
+  if (clip.type === 'image') {
+    return <img src={src} style={style} alt="" />;
+  }
+  return <video ref={ref} src={src} muted style={style} preload="auto" />;
+};
+
 const PreviewPlayer: React.FC = () => {
   const { tracks, playhead, duration, isPlaying, setPlayhead, setIsPlaying } =
     useEditorStore();
@@ -21,10 +64,17 @@ const PreviewPlayer: React.FC = () => {
   const [muted, setMuted] = useState(false);
   const [currentSrc, setCurrentSrc] = useState<string | null>(null);
 
-  // Find the video clip that should be playing at the current playhead
-  const activeVideo = findClipAt(tracks, 'video', playhead);
-  const activeClip = activeVideo?.clip ?? null;
-  const videoTrackMuted = !!activeVideo?.track.muted;
+  // Base track visual (video or full-frame image) at the playhead
+  const activeBase = findBaseVisualClipAt(tracks, playhead);
+  const baseClip = activeBase?.clip ?? null;
+  const activeClip = baseClip?.type === 'video' ? baseClip : null; // drives <video>
+  const baseImage = baseClip?.type === 'image' ? baseClip : null;
+  const videoTrackMuted = !!activeBase?.track.muted;
+
+  // Overlay clips (video tracks 1+)
+  const overlays = findOverlayClipsAt(tracks, playhead).filter(
+    ({ track }) => !track.muted,
+  );
 
   // Active audio-track clip (music/voiceover laid on the audio track)
   const activeAudio = findClipAt(tracks, 'audio', playhead);
@@ -34,9 +84,9 @@ const PreviewPlayer: React.FC = () => {
     ? toMediaUrl(audioClip.previewSrc ?? audioClip.src)
     : null;
 
-  // Active caption at playhead
-  const activeCaption = findClipAt(tracks, 'caption', playhead)?.clip
-    .captionText;
+  // Active caption clip (text + style)
+  const captionClip = findClipAt(tracks, 'caption', playhead)?.clip ?? null;
+  const capStyle = captionClip?.captionStyle ?? {};
 
   useEffect(() => {
     if (!activeClip) {
@@ -155,13 +205,43 @@ const PreviewPlayer: React.FC = () => {
 
   const pct = duration > 0 ? (playhead / duration) * 100 : 0;
 
+  // Caption preview styling (fontSize is authored at 1080p; ~scale to preview)
+  const capPosition = capStyle.position ?? 'bottom';
+  const captionWrapStyle: React.CSSProperties = {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    display: 'flex',
+    justifyContent: 'center',
+    padding: '0 24px',
+    pointerEvents: 'none',
+    ...(capPosition === 'top'
+      ? { top: '6%' }
+      : capPosition === 'middle'
+        ? { top: '50%', transform: 'translateY(-50%)' }
+        : { bottom: '6%' }),
+  };
+  const captionTextStyle: React.CSSProperties = {
+    color: capStyle.color ?? '#ffffff',
+    fontWeight: capStyle.bold === false ? 500 : 800,
+    fontFamily: capStyle.fontFamily ?? 'Arial, sans-serif',
+    // 48pt at 1080p ≈ 4.4% of frame height; preview stage scales with width
+    fontSize: `${((capStyle.fontSize ?? 48) / 1080) * 100 * 2.2}cqh`,
+    textShadow: capStyle.background ? 'none' : '0 2px 6px rgba(0,0,0,0.9)',
+    background: capStyle.background ? 'rgba(0,0,0,0.55)' : 'transparent',
+    padding: capStyle.background ? '0.15em 0.5em' : '0.15em 0',
+    borderRadius: 6,
+    textAlign: 'center' as const,
+    whiteSpace: 'pre-wrap' as const,
+  };
+
   return (
     <div className="flex flex-col items-center w-full h-full px-6 pt-5 pb-4 gap-3">
       {/* Video stage */}
       <div className="relative flex-1 w-full flex items-center justify-center min-h-0">
         <div
           className="relative max-w-full max-h-full aspect-video bg-black rounded-xl overflow-hidden shadow-2xl ring-1 ring-[#202027] flex items-center justify-center"
-          style={{ width: '100%' }}
+          style={{ width: '100%', containerType: 'size' }}
         >
           {currentSrc ? (
             <video
@@ -169,7 +249,15 @@ const PreviewPlayer: React.FC = () => {
               src={currentSrc}
               muted={muted || videoTrackMuted}
               className="max-w-full max-h-full w-full h-full object-contain"
+              style={{ filter: cssFilterFor(activeClip?.adjust) }}
               preload="auto"
+            />
+          ) : baseImage ? (
+            <img
+              src={toMediaUrl(baseImage.src)}
+              className="max-w-full max-h-full w-full h-full object-contain"
+              style={{ filter: cssFilterFor(baseImage.adjust) }}
+              alt=""
             />
           ) : (
             <div className="flex flex-col items-center gap-3 text-[#3f3f4a]">
@@ -182,6 +270,16 @@ const PreviewPlayer: React.FC = () => {
             </div>
           )}
 
+          {/* Overlay tracks (PiP / logos / stickers) */}
+          {overlays.map(({ clip }) => (
+            <OverlayItem
+              key={clip.id}
+              clip={clip}
+              isPlaying={isPlaying}
+              playhead={playhead}
+            />
+          ))}
+
           {/* Hidden audio element for audio-track clips (music/voiceover) */}
           {audioSrc && (
             <audio
@@ -193,15 +291,10 @@ const PreviewPlayer: React.FC = () => {
             />
           )}
 
-          {/* Caption overlay */}
-          {activeCaption && (
-            <div className="absolute inset-x-0 bottom-6 flex justify-center px-6 pointer-events-none">
-              <span
-                className="text-white text-lg font-semibold text-center px-3 py-1 rounded"
-                style={{ textShadow: '0 2px 6px rgba(0,0,0,0.9)' }}
-              >
-                {activeCaption}
-              </span>
+          {/* Caption overlay (styled to match export) */}
+          {captionClip?.captionText && (
+            <div style={captionWrapStyle}>
+              <span style={captionTextStyle}>{captionClip.captionText}</span>
             </div>
           )}
         </div>

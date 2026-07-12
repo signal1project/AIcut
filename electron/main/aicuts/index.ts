@@ -29,6 +29,29 @@ export function registerAiCutHandlers(win: Electron.BrowserWindow) {
       properties: ['openFile', 'multiSelections'],
       filters: [
         {
+          name: 'All Media',
+          extensions: [
+            'mp4',
+            'mov',
+            'avi',
+            'mkv',
+            'webm',
+            'mts',
+            'm4v',
+            'mp3',
+            'wav',
+            'aac',
+            'm4a',
+            'flac',
+            'ogg',
+            'png',
+            'jpg',
+            'jpeg',
+            'webp',
+            'gif',
+          ],
+        },
+        {
           name: 'Video',
           extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'mts', 'm4v'],
         },
@@ -37,27 +60,30 @@ export function registerAiCutHandlers(win: Electron.BrowserWindow) {
           extensions: ['mp3', 'wav', 'aac', 'm4a', 'flac', 'ogg'],
         },
         {
-          name: 'All Media',
-          extensions: [
-            'mp4',
-            'mov',
-            'avi',
-            'mkv',
-            'webm',
-            'mp3',
-            'wav',
-            'aac',
-            'm4a',
-          ],
+          name: 'Images',
+          extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'],
         },
       ],
     });
 
     if (result.canceled || result.filePaths.length === 0) return null;
 
+    const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
+
     const items = await Promise.all(
       result.filePaths.map(async (filePath) => {
         try {
+          // Images: no probe/proxy needed — the file is its own preview.
+          if (IMAGE_EXTS.has(path.extname(filePath).toLowerCase())) {
+            return {
+              src: filePath,
+              name: path.basename(filePath),
+              duration: 5, // default on-timeline duration; trim to taste
+              type: 'image',
+              thumbnail: filePath,
+              hasAudio: false,
+            };
+          }
           const probe = await probeVideo(filePath);
           // Persist thumbnails under userData (not tmp) so saved projects keep them.
           const thumbnail = await getThumbnail(filePath, 0, thumbsDir);
