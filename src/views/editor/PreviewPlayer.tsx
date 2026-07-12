@@ -61,11 +61,19 @@ const PreviewPlayer: React.FC = () => {
     }
   }, [playhead, activeClip, currentSrc, isPlaying]);
 
-  // Honor per-clip speed in preview (matches export timing)
+  // Honor per-clip speed + volume in preview (matches export)
   useEffect(() => {
     const video = videoRef.current;
-    if (video) video.playbackRate = activeClip?.speed ?? 1;
-  }, [activeClip?.speed, currentSrc]);
+    if (!video) return;
+    video.playbackRate = activeClip?.speed ?? 1;
+    video.volume = Math.max(0, Math.min(1, activeClip?.volume ?? 1));
+  }, [activeClip?.speed, activeClip?.volume, currentSrc]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = Math.max(0, Math.min(1, audioClip?.volume ?? 1));
+  }, [audioClip?.volume, audioSrc]);
 
   // CLOCK MASTER — while a video clip plays, drive the timeline playhead from
   // the video element's own clock instead of an external rAF accumulator.

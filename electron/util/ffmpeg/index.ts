@@ -6,10 +6,10 @@
  * @Description: ffmpeg工具
  */
 import ffmpeg from 'fluent-ffmpeg';
-import ffmpegPath from '@ffmpeg-installer/ffmpeg';
+import { resolveFfmpegPath } from '../ffmpegBinary';
 import ffprobePath from '@ffprobe-installer/ffprobe';
 
-ffmpeg.setFfmpegPath(ffmpegPath.path.replace('app.asar', 'app.asar.unpacked'));
+ffmpeg.setFfmpegPath(resolveFfmpegPath());
 ffmpeg.setFfprobePath(
   ffprobePath.path.replace('app.asar', 'app.asar.unpacked'),
 );

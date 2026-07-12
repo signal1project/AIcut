@@ -21,11 +21,17 @@ interface Props {
 
 const TRACK_HEIGHT = 60;
 
-const TYPE_ICON = { video: Film, audio: Music, caption: Type } as const;
+const TYPE_ICON = {
+  video: Film,
+  audio: Music,
+  caption: Type,
+  image: Film,
+} as const;
 const TYPE_DOT = {
   video: '#4d7cff',
   audio: '#22c55e',
   caption: '#e0a93a',
+  image: '#a78bfa',
 } as const;
 
 const TimelineTrack: React.FC<Props> = ({

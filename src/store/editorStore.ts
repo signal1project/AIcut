@@ -2,7 +2,49 @@ import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { v4 as uuidv4 } from 'uuid';
 
-export type ClipType = 'video' | 'audio' | 'caption';
+export type ClipType = 'video' | 'audio' | 'caption' | 'image';
+
+/** Caption text styling — mirrored to ASS styles at export time. */
+export interface CaptionStyle {
+  fontFamily?: string; // default 'Arial'
+  fontSize?: number; // pt at 1080p baseline, default 48
+  color?: string; // '#ffffff'
+  bold?: boolean;
+  position?: 'top' | 'middle' | 'bottom';
+  background?: boolean; // translucent box behind text
+}
+
+/** Transition INTO this clip from the previous one on the same track. */
+export interface TransitionIn {
+  type: 'fade' | 'wipeleft' | 'wiperight' | 'slideup' | 'circleopen';
+  duration: number; // seconds
+}
+
+/** Placement for clips on overlay tracks (video track 2+ / images). */
+export interface OverlayPlacement {
+  x: number; // 0-1 relative to output width
+  y: number; // 0-1 relative to output height
+  scale: number; // fraction of output width (0-1)
+  opacity: number; // 0-1
+}
+
+/** Color adjustments applied via ffmpeg eq at export, CSS filters in preview. */
+export interface ClipAdjust {
+  preset?: 'none' | 'vivid' | 'warm' | 'cool' | 'mono' | 'bright';
+  brightness?: number; // -1..1 (0 = neutral)
+  contrast?: number; // 0..2 (1 = neutral)
+  saturation?: number; // 0..3 (1 = neutral)
+}
+
+/** Green-screen keying. */
+export interface ChromaKey {
+  enabled: boolean;
+  color: string; // '#00ff00'
+  similarity: number; // 0.01-1
+  blend: number; // 0-1
+}
+
+export type MotionPreset = 'none' | 'zoom_in' | 'zoom_out';
 
 export interface Clip {
   id: string;
@@ -21,6 +63,12 @@ export interface Clip {
   speed?: number; // playback speed multiplier (default 1.0); 2.0 = 2x faster
   fadeIn?: number; // fade-in duration in seconds (default 0)
   fadeOut?: number; // fade-out duration in seconds (default 0)
+  captionStyle?: CaptionStyle; // caption clips
+  transitionIn?: TransitionIn; // video clips: transition from previous clip
+  overlay?: OverlayPlacement; // clips on overlay tracks / image clips
+  adjust?: ClipAdjust; // video/image clips
+  chromaKey?: ChromaKey; // video clips (green screen)
+  motion?: MotionPreset; // video/image clips
 }
 
 export interface Track {
@@ -38,7 +86,7 @@ export interface MediaItem {
   previewSrc?: string; // renderer-playable proxy (HEVC/odd containers); export uses src
   name: string;
   duration: number;
-  type: 'video' | 'audio';
+  type: 'video' | 'audio' | 'image';
   thumbnail?: string;
   width?: number;
   height?: number;

@@ -22,6 +22,12 @@ import { ipc } from '@/lib/ipc';
 import { saveCurrentProject, saveProjectAs } from '@/lib/projectPersistence';
 
 const RESOLUTIONS = ['1080p', '4k', '720p'] as const;
+const ASPECTS = [
+  { id: '16:9', label: '16:9 Wide' },
+  { id: '9:16', label: '9:16 Vertical' },
+  { id: '1:1', label: '1:1 Square' },
+  { id: '4:5', label: '4:5 Portrait' },
+] as const;
 
 /** Isolated so only this tiny node re-renders on 60fps playhead ticks. */
 const Timecode: React.FC = () => {
@@ -65,6 +71,7 @@ const Toolbar: React.FC = () => {
   const [resolution, setResolution] = useState<'1080p' | '4k' | '720p'>(
     '1080p',
   );
+  const [aspect, setAspect] = useState<'16:9' | '9:16' | '1:1' | '4:5'>('16:9');
   const [autoEditing, setAutoEditing] = useState(false);
   const [showSaveAs, setShowSaveAs] = useState(false);
   const [saveAsName, setSaveAsName] = useState('');
@@ -123,8 +130,11 @@ const Toolbar: React.FC = () => {
   };
 
   const handleExport = async () => {
-    const allClips = tracks.flatMap((t) =>
-      t.clips.map((c) => ({
+    // trackIndex: position among VIDEO tracks (0 = base, 1+ = overlays).
+    let videoTrackCounter = 0;
+    const allClips = tracks.flatMap((t) => {
+      const trackIndex = t.type === 'video' ? videoTrackCounter++ : 0;
+      return t.clips.map((c) => ({
         id: c.id,
         src: c.src,
         startTime: c.startTime,
@@ -133,13 +143,25 @@ const Toolbar: React.FC = () => {
         duration: c.duration,
         type: c.type,
         captionText: c.captionText,
+        captionStyle: c.captionStyle,
         volume: c.volume,
-      })),
-    );
+        speed: c.speed,
+        fadeIn: c.fadeIn,
+        fadeOut: c.fadeOut,
+        transitionIn: c.transitionIn,
+        overlay: c.overlay,
+        adjust: c.adjust,
+        chromaKey: c.chromaKey,
+        motion: c.motion,
+        trackIndex,
+        trackMuted: !!t.muted,
+      }));
+    });
     if (allClips.length === 0) return;
     setExportProgress(0);
     const result = (await ipc.invoke('aicuts:export', allClips, {
       resolution,
+      aspect,
       format: 'mp4',
       fps: 30,
     })) as
@@ -400,7 +422,25 @@ const Toolbar: React.FC = () => {
           )}
         </button>
         {showExport && exportProgress == null && (
-          <div className="absolute right-0 top-full mt-2 z-50 bg-[#1d1d22] border border-[#303039] rounded-xl shadow-2xl p-3.5 w-52">
+          <div className="absolute right-0 top-full mt-2 z-50 bg-[#1d1d22] border border-[#303039] rounded-xl shadow-2xl p-3.5 w-60">
+            <p className="text-[10px] text-[#71717f] uppercase tracking-wider mb-2">
+              Aspect ratio
+            </p>
+            <div className="grid grid-cols-2 gap-1.5 mb-3">
+              {ASPECTS.map((a) => (
+                <button
+                  key={a.id}
+                  onClick={() => setAspect(a.id)}
+                  className={`text-[11px] font-medium px-2 py-1.5 rounded-md transition-colors ${
+                    aspect === a.id
+                      ? 'bg-[#4d7cff] text-white'
+                      : 'bg-[#26262d] text-[#9a9aa6] hover:bg-[#303039]'
+                  }`}
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
             <p className="text-[10px] text-[#71717f] uppercase tracking-wider mb-2">
               Resolution
             </p>

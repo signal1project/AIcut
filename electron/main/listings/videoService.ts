@@ -1,5 +1,5 @@
 import ffmpeg from 'fluent-ffmpeg';
-import ffmpegPath from '@ffmpeg-installer/ffmpeg';
+import { resolveFfmpegPath } from '../../util/ffmpegBinary';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import type { ListingStore } from './listingStore';
 import type { PropertyListingSummary } from './types';
 
-ffmpeg.setFfmpegPath(ffmpegPath.path.replace('app.asar', 'app.asar.unpacked'));
+ffmpeg.setFfmpegPath(resolveFfmpegPath());
 
 const OUT_W = 1080;
 const OUT_H = 1920;

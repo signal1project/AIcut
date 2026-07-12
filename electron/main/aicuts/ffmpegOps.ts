@@ -1,13 +1,24 @@
 import ffmpeg from 'fluent-ffmpeg';
-import ffmpegPath from '@ffmpeg-installer/ffmpeg';
 import ffprobePath from '@ffprobe-installer/ffprobe';
+import { resolveFfmpegPath } from '../../util/ffmpegBinary';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  ASPECT_DIMENSIONS,
+  buildExportGraph,
+  buildAssSubtitles,
+  type AspectRatio,
+  type CaptionStyleSpec,
+  type GraphClip,
+  type Resolution,
+} from './exportGraph';
 
-ffmpeg.setFfmpegPath(ffmpegPath.path.replace('app.asar', 'app.asar.unpacked'));
-ffmpeg.setFfprobePath(ffprobePath.path.replace('app.asar', 'app.asar.unpacked'));
+ffmpeg.setFfmpegPath(resolveFfmpegPath());
+ffmpeg.setFfprobePath(
+  ffprobePath.path.replace('app.asar', 'app.asar.unpacked'),
+);
 
 export interface ProbeResult {
   duration: number;
@@ -26,19 +37,40 @@ export interface TimelineClip {
   trimStart: number;
   trimEnd: number;
   duration: number;
-  type: 'video' | 'audio' | 'caption';
+  type: 'video' | 'audio' | 'caption' | 'image';
   captionText?: string;
   volume?: number;
   speed?: number;
   fadeIn?: number;
   fadeOut?: number;
+  /** Index among video tracks (0 = base, 1+ = overlay). Defaults to 0. */
+  trackIndex?: number;
+  trackMuted?: boolean;
+  captionStyle?: CaptionStyleSpec;
+  transitionIn?: { type: string; duration: number };
+  overlay?: { x: number; y: number; scale: number; opacity: number };
+  adjust?: {
+    preset?: string;
+    brightness?: number;
+    contrast?: number;
+    saturation?: number;
+  };
+  chromaKey?: {
+    enabled: boolean;
+    color: string;
+    similarity: number;
+    blend: number;
+  };
+  motion?: 'none' | 'zoom_in' | 'zoom_out';
 }
 
 export interface ExportOptions {
   outputPath: string;
-  resolution: '1080p' | '4k' | '720p';
+  resolution: Resolution;
+  aspect?: AspectRatio;
   format: 'mp4' | 'mov';
   fps: number;
+  duckMusic?: boolean;
   onProgress?: (percent: number) => void;
 }
 
@@ -64,7 +96,11 @@ export async function probeVideo(filePath: string): Promise<ProbeResult> {
   });
 }
 
-export async function getThumbnail(filePath: string, timeSeconds = 0, outDirOverride?: string): Promise<string> {
+export async function getThumbnail(
+  filePath: string,
+  timeSeconds = 0,
+  outDirOverride?: string,
+): Promise<string> {
   const outDir = outDirOverride ?? path.join(os.tmpdir(), 'aicuts-thumbs');
   fs.mkdirSync(outDir, { recursive: true });
   const outFile = path.join(outDir, `${uuidv4()}.jpg`);
@@ -80,155 +116,115 @@ export async function getThumbnail(filePath: string, timeSeconds = 0, outDirOver
   });
 }
 
+/** Escape a Windows path for use inside an ffmpeg ass= filter argument. */
+export function escapeFilterPath(p: string): string {
+  return p.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
+}
+
+/**
+ * Export the timeline via a single filter_complex graph (see exportGraph.ts).
+ * Honors timeline positions (gaps = black+silence), audio-track clips,
+ * per-clip volume/speed/fades, transitions, overlays, and aspect presets.
+ * Captions burn in as styled ASS subtitles on the compressed timeline.
+ */
 export async function exportProject(
   clips: TimelineClip[],
   options: ExportOptions,
 ): Promise<void> {
-  const videoClips = clips.filter((c) => c.type === 'video');
-  const captionClips = clips.filter((c) => c.type === 'caption');
+  const visual = clips.filter((c) => c.type === 'video' || c.type === 'image');
+  if (visual.length === 0) throw new Error('No video clips to export');
 
-  if (videoClips.length === 0) throw new Error('No video clips to export');
+  const dims = ASPECT_DIMENSIONS[options.aspect ?? '16:9'][options.resolution];
 
-  const resMap = { '720p': '1280x720', '1080p': '1920x1080', '4k': '3840x2160' };
-  const resolution = resMap[options.resolution];
-
-  // Build trimmed segment temp files
-  const tmpDir = path.join(os.tmpdir(), `aicuts-export-${uuidv4()}`);
-  fs.mkdirSync(tmpDir, { recursive: true });
-
-  const segmentPaths: string[] = [];
-
-  for (const clip of videoClips) {
-    const effectiveDuration = clip.duration - clip.trimStart - clip.trimEnd;
-    const segPath = path.join(tmpDir, `seg_${uuidv4()}.mp4`);
-    await trimClipToFile(clip.src, clip.trimStart, effectiveDuration, segPath, resolution, options.fps, {
-      speed: clip.speed,
-      fadeIn: clip.fadeIn,
-      fadeOut: clip.fadeOut,
-    });
-    segmentPaths.push(segPath);
-  }
-
-  // Concatenate all segments
-  const concatListPath = path.join(tmpDir, 'concat.txt');
-  const concatContent = segmentPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n');
-  fs.writeFileSync(concatListPath, concatContent);
-
-  await concatSegments(
-    concatListPath,
-    options.outputPath,
-    captionClips,
-    options.onProgress,
+  // Probe audio presence once per unique source so the graph knows where to
+  // generate silence instead of referencing a missing audio stream.
+  const hasAudioBySrc: Record<string, boolean> = {};
+  const videoSrcs = new Set(
+    clips.filter((c) => c.type === 'video').map((c) => c.src),
   );
-
-  // Cleanup temp files
-  for (const seg of segmentPaths) fs.unlink(seg, () => {});
-  fs.unlink(concatListPath, () => {});
-  fs.rmdir(tmpDir, () => {});
-}
-
-function buildAtempo(speed: number): string {
-  const filters: string[] = [];
-  let s = speed;
-  while (s > 2.0) { filters.push('atempo=2.0'); s /= 2.0; }
-  while (s < 0.5) { filters.push('atempo=0.5'); s /= 0.5; }
-  if (Math.abs(s - 1.0) > 0.001) filters.push(`atempo=${s.toFixed(4)}`);
-  return filters.length > 0 ? filters.join(',') : '';
-}
-
-function trimClipToFile(
-  src: string,
-  trimStart: number,
-  duration: number,
-  outPath: string,
-  resolution: string,
-  fps: number,
-  opts?: { speed?: number; fadeIn?: number; fadeOut?: number },
-): Promise<void> {
-  const speed = opts?.speed ?? 1;
-  const outputDuration = duration / speed;
-  const fadeIn = opts?.fadeIn ?? 0;
-  const fadeOut = opts?.fadeOut ?? 0;
-
-  const vfParts: string[] = [
-    `scale=${resolution}:force_original_aspect_ratio=decrease`,
-    `pad=${resolution}:(ow-iw)/2:(oh-ih)/2`,
-  ];
-  if (Math.abs(speed - 1) > 0.001) {
-    vfParts.push(`setpts=${(1 / speed).toFixed(4)}*PTS`);
-  }
-  if (fadeIn > 0) vfParts.push(`fade=t=in:st=0:d=${fadeIn}`);
-  if (fadeOut > 0) vfParts.push(`fade=t=out:st=${Math.max(0, outputDuration - fadeOut).toFixed(3)}:d=${fadeOut}`);
-
-  return new Promise((resolve, reject) => {
-    let cmd = ffmpeg(src)
-      .seekInput(trimStart)
-      .duration(duration)
-      .videoFilters(vfParts.join(','))
-      .fps(fps)
-      .videoCodec('libx264')
-      .audioCodec('aac')
-      .outputOptions(['-preset fast', '-crf 18', '-movflags +faststart']);
-
-    const atempo = buildAtempo(speed);
-    if (atempo) cmd = cmd.audioFilters(atempo);
-
-    cmd.output(outPath)
-      .on('end', () => resolve())
-      .on('error', reject)
-      .run();
-  });
-}
-
-function concatSegments(
-  concatListPath: string,
-  outputPath: string,
-  captionClips: TimelineClip[],
-  onProgress?: (pct: number) => void,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    let cmd = ffmpeg()
-      .input(concatListPath)
-      .inputOptions(['-f concat', '-safe 0']);
-
-    // Burn in captions as subtitle overlay
-    if (captionClips.length > 0) {
-      const srtPath = buildSrtFile(captionClips);
-      cmd = cmd
-        .input(srtPath)
-        .videoFilters(`subtitles='${srtPath.replace(/\\/g, '/').replace(/'/g, "'\\''")}'`);
+  for (const src of videoSrcs) {
+    try {
+      hasAudioBySrc[src] = (await probeVideo(src)).hasAudio;
+    } catch {
+      hasAudioBySrc[src] = false;
     }
+  }
 
+  const graphClips: GraphClip[] = clips.map((c) => ({
+    ...c,
+    trackIndex: c.trackIndex ?? 0,
+  }));
+
+  const graph = buildExportGraph(graphClips, {
+    width: dims.width,
+    height: dims.height,
+    fps: options.fps,
+    hasAudioBySrc,
+    duckMusic: options.duckMusic,
+  });
+
+  const filters = [...graph.filters];
+  let videoLabel = graph.videoLabel;
+
+  // Styled caption burn-in.
+  const captions = graphClips.filter(
+    (c) => c.type === 'caption' && (c.captionText ?? '').trim(),
+  );
+  let assPath: string | null = null;
+  if (captions.length > 0) {
+    assPath = path.join(os.tmpdir(), `aicuts-captions-${uuidv4()}.ass`);
+    fs.writeFileSync(
+      assPath,
+      buildAssSubtitles(captions, {
+        width: dims.width,
+        height: dims.height,
+        transitions: graph.transitions,
+      }),
+    );
+    filters.push(`[${videoLabel}]ass='${escapeFilterPath(assPath)}'[vsub]`);
+    videoLabel = 'vsub';
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const cmd = ffmpeg();
+    for (const input of graph.inputs) {
+      cmd.input(input.path);
+      if (input.options.length > 0) cmd.inputOptions(input.options);
+    }
     cmd
-      .videoCodec('libx264')
-      .audioCodec('aac')
-      .outputOptions(['-preset fast', '-crf 18', '-movflags +faststart', '-c copy'])
-      .output(outputPath)
+      .complexFilter(filters)
+      .outputOptions([
+        '-map',
+        `[${videoLabel}]`,
+        '-map',
+        `[${graph.audioLabel}]`,
+        '-c:v',
+        'libx264',
+        '-preset',
+        'fast',
+        '-crf',
+        '18',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+        '-movflags',
+        '+faststart',
+        '-t',
+        graph.durationSeconds.toFixed(3),
+      ])
+      .output(options.outputPath)
       .on('progress', (prog) => {
-        if (onProgress && prog.percent != null) onProgress(Math.round(prog.percent));
+        if (options.onProgress && prog.percent != null) {
+          options.onProgress(
+            Math.max(0, Math.min(100, Math.round(prog.percent))),
+          );
+        }
       })
       .on('end', () => resolve())
       .on('error', reject)
       .run();
   });
-}
 
-function buildSrtFile(captionClips: TimelineClip[]): string {
-  const srtPath = path.join(os.tmpdir(), `aicuts-captions-${uuidv4()}.srt`);
-  let srt = '';
-  captionClips.forEach((clip, i) => {
-    const start = toSrtTime(clip.startTime);
-    const end = toSrtTime(clip.startTime + (clip.duration - clip.trimStart - clip.trimEnd));
-    srt += `${i + 1}\n${start} --> ${end}\n${clip.captionText ?? ''}\n\n`;
-  });
-  fs.writeFileSync(srtPath, srt);
-  return srtPath;
-}
-
-function toSrtTime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  const ms = Math.round((seconds % 1) * 1000);
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},${String(ms).padStart(3, '0')}`;
+  if (assPath) fs.unlink(assPath, () => {});
 }

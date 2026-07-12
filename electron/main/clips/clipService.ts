@@ -1,5 +1,5 @@
 import ffmpeg from 'fluent-ffmpeg';
-import ffmpegPath from '@ffmpeg-installer/ffmpeg';
+import { resolveFfmpegPath } from '../../util/ffmpegBinary';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -8,7 +8,7 @@ import type { AIProvider } from '@mas/types';
 import { parseSrtOrVtt, toSrt, transcribeViaOpenAI, type TranscriptSegment } from './transcription';
 import { pickHighlights, type HighlightWindow } from './autoClip';
 
-ffmpeg.setFfmpegPath(ffmpegPath.path.replace('app.asar', 'app.asar.unpacked'));
+ffmpeg.setFfmpegPath(resolveFfmpegPath());
 
 export interface AutoClipInput {
   videoPath: string;
